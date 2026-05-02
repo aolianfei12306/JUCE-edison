@@ -36,15 +36,15 @@ MainComponent::MainComponent()
     setApplicationCommandManagerToWatch(m_commandManager.get());
     m_commandManager->registerAllCommandsForTarget(this);
     addKeyListener(m_commandManager->getKeyMappings());
-
     if (auto* mappings = m_commandManager->getKeyMappings())
     {
         mappings->resetToDefaultMappings();
         mappings->addKeyPress(cmdOpen, juce::KeyPress('o', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdPlayPause, juce::KeyPress(juce::KeyPress::spaceKey, 0, 0));
         mappings->addKeyPress(cmdToggleView, juce::KeyPress('s', juce::ModifierKeys::ctrlModifier, 0));
+        mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::deleteKey, 0, 0));
+        mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::backspaceKey, 0, 0));
     }
-
     setInterceptsMouseClicks(true, true);
 
     // Recording finished callback
@@ -221,7 +221,7 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
         break;
     case cmdSilence:
-        info.setInfo("Silence Selection", "Set selected audio to silence", "Process", 0);
+        info.setInfo("Silence Selection (Delete/Backspace)", "Set selected audio to silence", "Process", 0);
         info.addDefaultKeypress('d', juce::ModifierKeys::ctrlModifier);
         break;
     case cmdReverse:
