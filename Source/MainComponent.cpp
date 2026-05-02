@@ -7,6 +7,7 @@
 #include "DragExport.h"
 #include "SpectrogramComponent.h"
 #include "UndoableActions.h"
+#include "LoopOverlay.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -39,6 +40,9 @@ MainComponent::MainComponent()
     m_markerOverlay = std::make_unique<MarkerOverlay>(*m_markerManager, *m_fileManager, *m_waveform);
     m_regionManager = std::make_unique<RegionManager>();
     m_regionOverlay = std::make_unique<RegionOverlay>(*m_regionManager, *m_fileManager, *m_selection, *m_waveform);
+    m_loopManager = std::make_unique<LoopManager>();
+    m_loopOverlay = std::make_unique<LoopOverlay>(*m_loopManager, *m_fileManager, *m_waveform);
+
     m_regionOverlay->onRegionSelected = [this](const RegionManager::Region& region) {
         m_selection->setSelection(region.startTime, region.endTime);
         m_waveform->setZoom(m_waveform->getZoom() * 1.0); // force rezoom on next paint
@@ -58,12 +62,14 @@ MainComponent::MainComponent()
 
     m_deviceManager.initialiseWithDefaultDevices(2, 2);
     m_transport->setAudioDeviceManager(&m_deviceManager);
+    m_transport->setLoopManager(m_loopManager.get());
 
     addAndMakeVisible(*m_waveform);
     addAndMakeVisible(*m_selectionOverlay);
     addAndMakeVisible(*m_spectrogram);
     addAndMakeVisible(*m_regionOverlay);
     addAndMakeVisible(*m_markerOverlay);
+    addAndMakeVisible(*m_loopOverlay);
     addAndMakeVisible(*m_transport);
     m_spectrogram->setVisible(false); // start with waveform view
     m_markerOverlay->setAlwaysOnTop(true);
@@ -96,6 +102,7 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdPrevRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdZoomToSelection, juce::KeyPress('z', 0, 0));
         mappings->addKeyPress(cmdFitAll, juce::KeyPress('f', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
+        mappings->addKeyPress(cmdToggleLoop, juce::KeyPress('l', 0, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -175,6 +182,7 @@ void MainComponent::resized()
     m_selectionOverlay->setBounds(r);
     m_spectrogram->setBounds(r);
     m_markerOverlay->setBounds(r);
+    m_loopOverlay->setBounds(r);
     m_regionOverlay->setBounds(regionBarR); // setAlwaysOnTop already set
 }
 
@@ -260,7 +268,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
                      cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
-                     cmdZoomToSelection, cmdFitAll });
+                     cmdZoomToSelection, cmdFitAll, cmdToggleLoop });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -357,6 +365,10 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdPrevRegion:
         info.setInfo("Previous Region (Ctrl+Shift+Tab)", "Switch to previous region", "Regions", 0);
         info.addDefaultKeypress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
+        break;
+    case cmdToggleLoop:
+        info.setInfo("Toggle Loop (L)", "Toggle loop/cycle playback mode", "Transport", 0);
+        info.addDefaultKeypress('l', 0);
         break;
     default: break;
     }
@@ -468,6 +480,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdFitAll:
         fitAll();
+        return true;
+    case cmdToggleLoop:
+        toggleLoop();
         return true;
     case cmdAddRegion:
         addRegionFromSelection();
@@ -602,6 +617,36 @@ void MainComponent::fitAll()
     m_waveform->setHorizontalOffset(0.0);
     m_zoomedToSelection = false;
     m_waveform->repaint();
+}
+
+void MainComponent::toggleLoop()
+{
+    if (m_loopManager->isLoopEnabled())
+    {
+        // Turn off loop
+        m_loopManager->clearLoop();
+    }
+    else
+    {
+        // Turn on loop
+        if (m_selection->hasSelection())
+        {
+            m_loopManager->setLoopRange(
+                m_selection->getSelectionStart(),
+                m_selection->getSelectionEnd());
+            m_loopManager->setLoopEnabled(true);
+        }
+        else if (m_fileManager->hasAudio())
+        {
+            // No selection - loop entire file
+            m_loopManager->setLoopRange(0.0, m_fileManager->getDurationSec());
+            m_loopManager->setLoopEnabled(true);
+        }
+    }
+
+    m_loopOverlay->repaint();
+    m_waveform->repaint();
+    m_spectrogram->repaint();
 }
 
 void MainComponent::addRegionFromSelection()

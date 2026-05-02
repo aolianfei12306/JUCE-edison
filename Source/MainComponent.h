@@ -11,10 +11,13 @@ class TransportBar;
 class DragExport;
 class SpectrogramComponent;
 class AudioModifyAction;
+class LoopManager;
 #include "MarkerManager.h"
 #include "MarkerOverlay.h"
 #include "RegionManager.h"
 #include "RegionOverlay.h"
+#include "LoopManager.h"
+class LoopOverlay;
 
 class MainComponent : public juce::Component,
                       public juce::MenuBarModel,
@@ -79,12 +82,14 @@ public:
         cmdPrevRegion         = 0x1023,
         cmdZoomToSelection    = 0x1030,
         cmdFitAll             = 0x1031,
+        cmdToggleLoop         = 0x1040,
     };
 
     void loadAudioFile(const juce::File& file);
     void addRegionFromSelection();
     void zoomToSelection();
     void fitAll();
+    void toggleLoop();
     void silenceSelection();
     void reverseSelection();
     void normalizeSelection();
@@ -107,6 +112,8 @@ private:
     std::unique_ptr<MarkerOverlay>        m_markerOverlay;
     std::unique_ptr<RegionManager>        m_regionManager;
     std::unique_ptr<RegionOverlay>        m_regionOverlay;
+    std::unique_ptr<LoopManager>          m_loopManager;
+    std::unique_ptr<LoopOverlay>          m_loopOverlay;
     int m_currentRegionCycler = -1;
     bool m_zoomedToSelection = false;
     double m_preZoomLevel = 1.0;

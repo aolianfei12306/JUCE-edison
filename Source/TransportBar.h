@@ -5,6 +5,7 @@
 
 class AudioFileManager;
 class SelectionManager;
+class LoopManager;
 
 class TransportBar : public juce::Component,
                      public juce::AudioSource,
@@ -36,6 +37,7 @@ public:
     State getState()   const noexcept { return m_state; }
 
     void setAudioDeviceManager(juce::AudioDeviceManager* dm) { m_deviceManager = dm; }
+    void setLoopManager(LoopManager* lm) noexcept { m_loopManager = lm; }
     void setPosition(double posSec);
     double getPosition() const noexcept { return m_position; }
 
@@ -50,6 +52,7 @@ public:
 private:
     AudioFileManager& m_fileManager;
     SelectionManager& m_selection;
+    LoopManager* m_loopManager = nullptr;
     juce::AudioDeviceManager* m_deviceManager = nullptr;
     std::unique_ptr<juce::AudioSourcePlayer> m_player;
 

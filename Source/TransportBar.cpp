@@ -1,6 +1,7 @@
 #include "TransportBar.h"
 #include "AudioFileManager.h"
 #include "SelectionManager.h"
+#include "LoopManager.h"
 
 TransportBar::TransportBar(AudioFileManager& fileManager, SelectionManager& selection)
     : m_fileManager(fileManager), m_selection(selection)
@@ -167,18 +168,43 @@ void TransportBar::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     int totalSamples = src->getNumSamples();
     int numCh        = juce::jmin(bufferToFill.buffer->getNumChannels(), src->getNumChannels());
 
+    bool shouldLoop = (m_loopManager != nullptr && m_loopManager->hasValidLoop());
+
     for (int s = 0; s < numSamples; ++s)
     {
         if (m_readIndex >= totalSamples)
         {
-            // Check selection end
-            if (m_selection.hasSelection())
+            if (shouldLoop)
             {
-                double pos = static_cast<double>(m_readIndex) / m_sampleRate;
-                if (pos >= m_selection.getSelectionEnd()) { stop(); return; }
+                // End of file with loop enabled: wrap to loop start
+                int loopStartSample = static_cast<int>(m_loopManager->getLoopStart() * m_sampleRate);
+                loopStartSample = juce::jlimit(0, totalSamples - 1, loopStartSample);
+                m_readIndex = loopStartSample;
             }
-            stop();
-            return;
+            else
+            {
+                stop();
+                return;
+            }
+        }
+
+        // Check loop end boundary (for non-file-end wrapping)
+        if (shouldLoop)
+        {
+            int loopEndSample = static_cast<int>(m_loopManager->getLoopEnd() * m_sampleRate);
+            loopEndSample = juce::jmin(loopEndSample, totalSamples);
+            if (m_readIndex >= loopEndSample)
+            {
+                int loopStartSample = static_cast<int>(m_loopManager->getLoopStart() * m_sampleRate);
+                loopStartSample = juce::jlimit(0, totalSamples - 1, loopStartSample);
+                m_readIndex = loopStartSample;
+            }
+        }
+        else if (m_selection.hasSelection())
+        {
+            // Original selection-end check (only when loop is OFF)
+            double pos = static_cast<double>(m_readIndex) / m_sampleRate;
+            if (pos >= m_selection.getSelectionEnd()) { stop(); return; }
         }
 
         for (int ch = 0; ch < numCh; ++ch)
