@@ -5,12 +5,13 @@
 class SelectionManager;
 class WaveformThumbnail;
 class AudioFileManager;
+class GridManager;
 
 class SelectionOverlay : public juce::Component
 {
 public:
     SelectionOverlay(SelectionManager& selection, WaveformThumbnail& thumbnail,
-                     AudioFileManager& fileManager);
+                     AudioFileManager& fileManager, GridManager& gridManager);
     ~SelectionOverlay() override = default;
 
     void paint(juce::Graphics& g) override;
@@ -31,11 +32,12 @@ private:
     SelectionManager& m_selection;
     WaveformThumbnail& m_thumbnail;
     AudioFileManager&  m_fileManager;
+    GridManager& m_gridManager;
 
     static constexpr float kEdgeTolerance = 8.0f;
     DragMode hitTestEdge(const juce::MouseEvent& e) const;
 
-    /** Snap a time value to zero crossing if snap-to-zero is enabled */
+    /** Snap a time value according to the active grid / zero-crossing settings */
     double snapTime(double t) const noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelectionOverlay)

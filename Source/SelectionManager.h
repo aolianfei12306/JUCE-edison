@@ -1,5 +1,6 @@
 #pragma once
 #include "AudioFileManager.h"
+#include "GridManager.h"
 #include <juce_core/juce_core.h>
 #include <cmath>
 
@@ -45,15 +46,25 @@ public:
     void setSnapToZero(bool enabled) noexcept { m_snapToZero = enabled; }
     bool isSnapToZero() const noexcept { return m_snapToZero; }
     void toggleSnapToZero() noexcept { m_snapToZero = !m_snapToZero; }
+    void setSnapToGrid(bool enabled) noexcept { m_snapToGrid = enabled; }
+    bool isSnapToGrid() const noexcept { return m_snapToGrid; }
+    void toggleSnapToGrid() noexcept { m_snapToGrid = !m_snapToGrid; }
 
-    /** Snap a time value to the nearest zero crossing.
-     *  If snap-to-zero is disabled, returns timeSec unchanged.
+    /** Snap a time value to the active selection grid and/or zero crossing.
+     *  Grid snap runs first so zero crossing can refine the chosen beat boundary.
      */
-    double snapTime(double timeSec, const AudioFileManager& fileManager) const noexcept
+    double snapTime(double timeSec, const AudioFileManager& fileManager,
+                    const GridManager& gridManager) const noexcept
     {
-        if (!m_snapToZero)
-            return timeSec;
-        return fileManager.snapToZeroCrossing(timeSec);
+        double snapped = timeSec;
+
+        if (m_snapToGrid)
+            snapped = gridManager.snapToGrid(snapped, fileManager.getDurationSec());
+
+        if (m_snapToZero)
+            snapped = fileManager.snapToZeroCrossing(snapped);
+
+        return snapped;
     }
 
 private:
@@ -62,4 +73,5 @@ private:
     double m_selectionStart = -1.0;
     double m_selectionEnd   = -1.0;
     bool   m_snapToZero     = false;
+    bool   m_snapToGrid     = false;
 };

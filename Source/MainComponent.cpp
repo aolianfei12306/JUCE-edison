@@ -1,6 +1,8 @@
 #include "MainComponent.h"
 #include "SelectionManager.h"
 #include "AudioFileManager.h"
+#include "GridManager.h"
+#include "GridOverlay.h"
 #include "WaveformThumbnail.h"
 #include "SelectionOverlay.h"
 #include "TransportBar.h"
@@ -17,7 +19,9 @@ MainComponent::MainComponent()
     m_selection        = std::make_unique<SelectionManager>();
     m_fileManager      = std::make_unique<AudioFileManager>();
     m_waveform         = std::make_unique<WaveformThumbnail>(*m_fileManager, *m_selection);
-    m_selectionOverlay = std::make_unique<SelectionOverlay>(*m_selection, *m_waveform, *m_fileManager);
+    m_gridManager      = std::make_unique<GridManager>();
+    m_gridOverlay      = std::make_unique<GridOverlay>(*m_gridManager, *m_fileManager, *m_waveform);
+    m_selectionOverlay = std::make_unique<SelectionOverlay>(*m_selection, *m_waveform, *m_fileManager, *m_gridManager);
     m_selectionOverlay->onExportDragStarted = [this](auto* src) {
         const auto now = juce::Time::getCurrentTime();
         m_dragExport->startDragIfOverSelection(
@@ -66,13 +70,15 @@ MainComponent::MainComponent()
     m_transport->setLoopManager(m_loopManager.get());
 
     addAndMakeVisible(*m_waveform);
-    addAndMakeVisible(*m_selectionOverlay);
     addAndMakeVisible(*m_spectrogram);
+    addAndMakeVisible(*m_gridOverlay);
+    addAndMakeVisible(*m_selectionOverlay);
     addAndMakeVisible(*m_regionOverlay);
     addAndMakeVisible(*m_markerOverlay);
     addAndMakeVisible(*m_loopOverlay);
     addAndMakeVisible(*m_transport);
     m_spectrogram->setVisible(false); // start with waveform view
+    m_gridOverlay->setVisible(false);
     m_markerOverlay->setAlwaysOnTop(true);
     m_markerOverlay->setInterceptsMouseClicks(true, true);
     m_markerOverlay->onMarkerClicked = [this](double time) {
@@ -105,6 +111,7 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdFitAll, juce::KeyPress('f', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdToggleLoop, juce::KeyPress('l', 0, 0));
         mappings->addKeyPress(cmdToggleSnap, juce::KeyPress('x', 0, 0));
+        mappings->addKeyPress(cmdToggleGridSnap, juce::KeyPress('g', 0, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -159,6 +166,7 @@ void MainComponent::setViewMode(ViewMode mode)
     bool showSpectrogram = (mode == SpectrogramView);
 
     m_waveform->setVisible(showWaveform);
+    m_gridOverlay->setVisible(showWaveform && m_gridManager->isEnabled());
     m_selectionOverlay->setVisible(showWaveform);
     m_spectrogram->setVisible(showSpectrogram);
 
@@ -181,6 +189,7 @@ void MainComponent::resized()
     m_regionOverlay->setBounds(regionBarR);
 
     m_waveform->setBounds(r);
+    m_gridOverlay->setBounds(r);
     m_selectionOverlay->setBounds(r);
     m_spectrogram->setBounds(r);
     m_markerOverlay->setBounds(r);
@@ -244,6 +253,12 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdZoomIn);
         menu.addCommandItem(m_commandManager.get(), cmdZoomOut);
+        menu.addCommandItem(m_commandManager.get(), cmdZoomToSelection);
+        menu.addCommandItem(m_commandManager.get(), cmdFitAll);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdToggleSnap);
+        menu.addCommandItem(m_commandManager.get(), cmdToggleGridSnap);
+        menu.addCommandItem(m_commandManager.get(), cmdToggleLoop);
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdAddMarker);
         menu.addCommandItem(m_commandManager.get(), cmdRemoveMarker);
@@ -270,7 +285,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
                      cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
-                     cmdZoomToSelection, cmdFitAll, cmdToggleLoop, cmdToggleSnap });
+                     cmdZoomToSelection, cmdFitAll, cmdToggleLoop, cmdToggleSnap,
+                     cmdToggleGridSnap });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -375,6 +391,12 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdToggleSnap:
         info.setInfo("Toggle Snap to Zero (X)", "Toggle zero crossing snapping for selection edges", "Snap", 0);
         info.addDefaultKeypress('x', 0);
+        info.setTicked(m_selection != nullptr && m_selection->isSnapToZero());
+        break;
+    case cmdToggleGridSnap:
+        info.setInfo("Toggle Snap to Grid (G)", "Toggle beat/grid snapping for selection edges", "Snap", 0);
+        info.addDefaultKeypress('g', 0);
+        info.setTicked(m_gridManager != nullptr && m_gridManager->isEnabled());
         break;
     default: break;
     }
@@ -492,6 +514,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdToggleSnap:
         toggleSnapToZero();
+        return true;
+    case cmdToggleGridSnap:
+        toggleGridSnap();
         return true;
     case cmdAddRegion:
         addRegionFromSelection();
@@ -948,6 +973,15 @@ void MainComponent::fadeSelectionOut()
 void MainComponent::toggleSnapToZero()
 {
     m_selection->toggleSnapToZero();
+    repaint();
+}
+
+void MainComponent::toggleGridSnap()
+{
+    m_gridManager->toggleEnabled();
+    m_selection->setSnapToGrid(m_gridManager->isEnabled());
+    m_gridOverlay->setVisible(m_viewMode == WaveformView && m_gridManager->isEnabled());
+    m_gridOverlay->repaint();
     repaint();
 }
 

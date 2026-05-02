@@ -1,11 +1,12 @@
 #include "SelectionOverlay.h"
+#include "GridManager.h"
 #include "SelectionManager.h"
 #include "WaveformThumbnail.h"
 #include "AudioFileManager.h"
 
 SelectionOverlay::SelectionOverlay(SelectionManager& selection, WaveformThumbnail& thumbnail,
-                                   AudioFileManager& fileManager)
-    : m_selection(selection), m_thumbnail(thumbnail), m_fileManager(fileManager)
+                                   AudioFileManager& fileManager, GridManager& gridManager)
+    : m_selection(selection), m_thumbnail(thumbnail), m_fileManager(fileManager), m_gridManager(gridManager)
 {
     setInterceptsMouseClicks(true, false);
     setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -13,7 +14,7 @@ SelectionOverlay::SelectionOverlay(SelectionManager& selection, WaveformThumbnai
 
 double SelectionOverlay::snapTime(double t) const noexcept
 {
-    return m_selection.snapTime(t, m_fileManager);
+    return m_selection.snapTime(t, m_fileManager, m_gridManager);
 }
 
 SelectionOverlay::DragMode SelectionOverlay::hitTestEdge(const juce::MouseEvent& e) const
@@ -133,11 +134,25 @@ void SelectionOverlay::drawSelectionInfo(juce::Graphics& g, const juce::Rectangl
                    r, juce::Justification::centredLeft);
     }
 
-    // Show snap status
+    juce::StringArray snapModes;
+
+    if (m_selection.isSnapToGrid())
+    {
+        juce::String bpmText = juce::String(m_gridManager.getBPM(), 1);
+        if (bpmText.endsWith(".0"))
+            bpmText = bpmText.dropLastCharacters(2);
+
+        snapModes.add("Grid " + bpmText + "/" + juce::String(m_gridManager.getDivision()));
+    }
+
     if (m_selection.isSnapToZero())
+        snapModes.add("ZC");
+
+    if (!snapModes.isEmpty())
     {
         g.setColour(juce::Colour(0xCCFFCC44));
         g.setFont(12.0f);
-        g.drawText("  [Snap: ZC]", r, juce::Justification::centredRight);
+        g.drawText("  [Snap: " + snapModes.joinIntoString(", ") + "]",
+                   r, juce::Justification::centredRight);
     }
 }

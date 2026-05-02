@@ -7,6 +7,8 @@ class SelectionManager;
 class AudioFileManager;
 class WaveformThumbnail;
 class SelectionOverlay;
+class GridManager;
+class GridOverlay;
 class TransportBar;
 class DragExport;
 class SpectrogramComponent;
@@ -84,6 +86,7 @@ public:
         cmdFitAll             = 0x1031,
         cmdToggleLoop         = 0x1040,
         cmdToggleSnap         = 0x1050,
+        cmdToggleGridSnap     = 0x1060,
     };
 
     void loadAudioFile(const juce::File& file);
@@ -97,11 +100,14 @@ public:
     void fadeSelectionIn();
     void fadeSelectionOut();
     void toggleSnapToZero();
+    void toggleGridSnap();
 
 private:
     std::unique_ptr<SelectionManager>    m_selection;
     std::unique_ptr<AudioFileManager>    m_fileManager;
     std::unique_ptr<WaveformThumbnail>   m_waveform;
+    std::unique_ptr<GridManager>         m_gridManager;
+    std::unique_ptr<GridOverlay>         m_gridOverlay;
     std::unique_ptr<SelectionOverlay>    m_selectionOverlay;
     std::unique_ptr<TransportBar>        m_transport;
     std::unique_ptr<DragExport>          m_dragExport;
