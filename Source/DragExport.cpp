@@ -39,7 +39,7 @@ juce::File DragExport::exportSelectionAsWav(const juce::File& destDir)
 
     juce::WavAudioFormat wav;
     auto* writer = wav.createWriterFor(new juce::FileOutputStream(outFile),
-                                        44100.0, numCh, 16, {}, 0);
+                                        sr, numCh, 16, {}, 0);
     if (!writer) return {};
 
     juce::AudioBuffer<float> sel(numCh, numSamp);

@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 class SelectionManager;
@@ -18,8 +19,10 @@ public:
 
     void drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area);
 
+    std::function<void(juce::Component*)> onExportDragStarted;
+
 private:
-    enum class DragMode { None, Create, MoveLeft, MoveRight };
+    enum class DragMode { None, Create, MoveLeft, MoveRight, Export };
 
     DragMode m_dragMode = DragMode::None;
     double   m_dragStartTime = 0.0;

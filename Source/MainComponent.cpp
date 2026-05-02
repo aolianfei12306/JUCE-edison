@@ -16,6 +16,21 @@ MainComponent::MainComponent()
     m_fileManager      = std::make_unique<AudioFileManager>();
     m_waveform         = std::make_unique<WaveformThumbnail>(*m_fileManager, *m_selection);
     m_selectionOverlay = std::make_unique<SelectionOverlay>(*m_selection, *m_waveform);
+    m_selectionOverlay->onExportDragStarted = [this](auto* src) {
+        const auto now = juce::Time::getCurrentTime();
+        m_dragExport->startDragIfOverSelection(
+            juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),
+                             juce::Point<float>{},
+                             juce::ModifierKeys{},
+                             0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                             src, src,
+                             now,
+                             juce::Point<float>{},
+                             now,
+                             1,
+                             true),
+            src);
+    };
     m_transport        = std::make_unique<TransportBar>(*m_fileManager, *m_selection);
     m_dragExport       = std::make_unique<DragExport>(*m_selection, *m_fileManager);
     m_spectrogram      = std::make_unique<SpectrogramComponent>(*m_fileManager);

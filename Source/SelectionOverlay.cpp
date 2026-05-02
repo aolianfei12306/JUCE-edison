@@ -37,11 +37,18 @@ void SelectionOverlay::mouseDown(const juce::MouseEvent& e)
     if (m_dragMode == DragMode::None)
     {
         double t = m_thumbnail.xToTime(e.position.x);
-        // If outside existing selection, start new one
         if (m_selection.hasSelection())
         {
             float sx = m_thumbnail.timeToX(m_selection.getSelectionStart());
             float ex = m_thumbnail.timeToX(m_selection.getSelectionEnd());
+
+            if (e.mods.isAltDown() && e.position.x >= sx && e.position.x <= ex)
+            {
+                m_dragMode = DragMode::Export;
+                repaint();
+                return;
+            }
+
             if (e.position.x < sx || e.position.x > ex)
                 m_selection.clearSelection();
         }
@@ -69,6 +76,10 @@ void SelectionOverlay::mouseDrag(const juce::MouseEvent& e)
     case DragMode::MoveRight:
         m_selection.setSelection(m_selection.getSelectionStart(), t);
         break;
+    case DragMode::Export:
+        if (onExportDragStarted)
+            onExportDragStarted(this);
+        break;
     default:
         break;
     }
@@ -77,7 +88,15 @@ void SelectionOverlay::mouseDrag(const juce::MouseEvent& e)
 
 void SelectionOverlay::mouseUp(const juce::MouseEvent& /*e*/)
 {
-    m_dragMode = DragMode::None;
+    switch (m_dragMode)
+    {
+    case DragMode::Export:
+        m_dragMode = DragMode::None;
+        break;
+    default:
+        m_dragMode = DragMode::None;
+        break;
+    }
     repaint();
 }
 
