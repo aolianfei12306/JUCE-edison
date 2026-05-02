@@ -12,9 +12,9 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P0 Pending: DragExport 集成完成 |
-| **完成度** | ~35% (P0: 100%, P1: 100%, P2: 50%) |
-| **最后更新** | 2026-05-02 18:51 CST |
+| **阶段** | P2: 标记/提示点 (Markers) 完成 |
+| **完成度** | ~40% (P0: 100%, P1: 100%, P2: 80%) |
+| **最后更新** | 2026-05-02 19:16 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -29,6 +29,7 @@
 | 2026-05-02 | P2 快捷键 | Delete/Backspace 静音 + 确认 Space 播放/暂停快捷键已绑定 | ✅ |
 | 2026-05-02 | P2 滚轮 | 鼠标滚轮精细缩放——Ctrl+滚轮缩放（因子1.05），滚轮水平滚动，Waveform/Spectrogram 双视图 | ✅ |
 | 2026-05-02 | P0 导出 | DragExport 集成——Alt+选区内拖动导出 WAV（修复 44100 硬编码采样率 Bug），构建通过 | ✅ |
+| 2026-05-02 | P2 标记 | Marker/Cue Points——M键添加，Shift+M移除，[/]导航，青色标记旗标+点击跳转 | ✅ |
 
 ## 版本里程碑
 
@@ -50,7 +51,7 @@
 ### P2 — 增强功能（按需）
 - [ ] 多 Region 管理（Edison 的"块"概念）
 - [x] 鼠标滚轮精细缩放（Ctrl+滚轮缩放，滚轮水平滚动），Waveform & Spectrogram 双视图
-- [ ] 标记/提示点
+- [x] 标记/提示点（M/Shift+M/[/]快捷键，青色标记旗标，点击跳转）
 - [x] 快捷键绑定（空格播放/暂停，Delete/Backspace 静音）
 
 ## 已知 Bug
@@ -80,6 +81,8 @@ open-edison/
 │   ├── DragExport.h/cpp          # 拖拽导出核心
 │   ├── SpectrogramComponent.h/cpp # 频谱/声谱图 STFT 渲染
 │   ├── UndoableActions.h/cpp     # Undo/Redo 动作（AudioModifyAction）
+│   ├── MarkerManager.h           # 标记点管理（增删改查）
+│   ├── MarkerOverlay.h/cpp       # 标记点覆盖层渲染（青色旗标+竖线+标签）
 ├── .gitignore
 ├── project_state.md
 └── README.md
