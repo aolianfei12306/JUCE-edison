@@ -5,6 +5,7 @@
 #include "SelectionOverlay.h"
 #include "TransportBar.h"
 #include "DragExport.h"
+#include "SpectrogramComponent.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -16,6 +17,7 @@ MainComponent::MainComponent()
     m_selectionOverlay = std::make_unique<SelectionOverlay>(*m_selection, *m_waveform);
     m_transport        = std::make_unique<TransportBar>(*m_fileManager, *m_selection);
     m_dragExport       = std::make_unique<DragExport>(*m_selection, *m_fileManager);
+    m_spectrogram      = std::make_unique<SpectrogramComponent>(*m_fileManager);
     m_commandManager   = std::make_unique<juce::ApplicationCommandManager>();
 
     m_deviceManager.initialiseWithDefaultDevices(2, 2);
@@ -23,7 +25,9 @@ MainComponent::MainComponent()
 
     addAndMakeVisible(*m_waveform);
     addAndMakeVisible(*m_selectionOverlay);
+    addAndMakeVisible(*m_spectrogram);
     addAndMakeVisible(*m_transport);
+    m_spectrogram->setVisible(false); // start with waveform view
 
     m_menuBar = std::make_unique<juce::MenuBarComponent>(this);
     addAndMakeVisible(*m_menuBar);
@@ -37,6 +41,7 @@ MainComponent::MainComponent()
         mappings->resetToDefaultMappings();
         mappings->addKeyPress(cmdOpen, juce::KeyPress('o', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdPlayPause, juce::KeyPress(juce::KeyPress::spaceKey, 0, 0));
+        mappings->addKeyPress(cmdToggleView, juce::KeyPress('s', juce::ModifierKeys::ctrlModifier, 0));
     }
 
     setInterceptsMouseClicks(true, true);
@@ -80,6 +85,22 @@ void MainComponent::paint(juce::Graphics& g)
     m_selectionOverlay->drawSelectionInfo(g, r);
 }
 
+void MainComponent::setViewMode(ViewMode mode)
+{
+    m_viewMode = mode;
+    bool showWaveform   = (mode == WaveformView);
+    bool showSpectrogram = (mode == SpectrogramView);
+
+    m_waveform->setVisible(showWaveform);
+    m_selectionOverlay->setVisible(showWaveform);
+    m_spectrogram->setVisible(showSpectrogram);
+
+    if (showSpectrogram)
+        m_spectrogram->rebuildFromAudio();
+
+    repaint();
+}
+
 void MainComponent::resized()
 {
     auto r = getLocalBounds();
@@ -91,6 +112,7 @@ void MainComponent::resized()
 
     m_waveform->setBounds(r);
     m_selectionOverlay->setBounds(r);
+    m_spectrogram->setBounds(r);
 }
 
 // ── Menu ──
@@ -130,6 +152,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
     }
     else if (idx == 2)
     {
+        menu.addCommandItem(m_commandManager.get(), cmdToggleView);
+        menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdZoomIn);
         menu.addCommandItem(m_commandManager.get(), cmdZoomOut);
     }
@@ -144,7 +168,7 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() { return n
 
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
 {
-    cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn, cmdZoomOut });
+    cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn, cmdZoomOut, cmdToggleView });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -170,6 +194,10 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         break;
     case cmdZoomOut:
         info.setInfo("Zoom Out", "Zoom out", "View", 0);
+        break;
+    case cmdToggleView:
+        info.setInfo("Toggle View (Ctrl+S)", "Switch between waveform and spectrogram", "View", 0);
+        info.addDefaultKeypress('s', juce::ModifierKeys::ctrlModifier);
         break;
     default: break;
     }
@@ -206,6 +234,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
     case cmdZoomOut:
         m_waveform->setZoom(m_waveform->getZoom() / 1.5);
         m_waveform->repaint();
+        return true;
+    case cmdToggleView:
+        setViewMode(m_viewMode == WaveformView ? SpectrogramView : WaveformView);
         return true;
     default:
         return false;
@@ -257,6 +288,9 @@ void MainComponent::loadAudioFile(const juce::File& file)
             thumb->addChangeListener(this);
 
         m_transport->setPosition(0.0);
+
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
 
         if (auto* peer = getPeer())
             peer->setTitle("Open Edison - " + file.getFileName());

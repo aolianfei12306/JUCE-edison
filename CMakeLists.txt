@@ -43,6 +43,7 @@ target_link_libraries(OpenEdison PRIVATE
   juce::juce_audio_devices
   juce::juce_audio_formats
   juce::juce_audio_utils
+  juce::juce_dsp
 )
 
 # Linux flags

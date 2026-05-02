@@ -9,6 +9,7 @@ class WaveformThumbnail;
 class SelectionOverlay;
 class TransportBar;
 class DragExport;
+class SpectrogramComponent;
 
 class MainComponent : public juce::Component,
                       public juce::MenuBarModel,
@@ -43,6 +44,10 @@ public:
     // ChangeListener
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
+    enum ViewMode { WaveformView, SpectrogramView };
+
+    void setViewMode(ViewMode mode);
+
     enum CommandIDs
     {
         cmdOpen      = 0x1001,
@@ -51,6 +56,7 @@ public:
         cmdPlaySel   = 0x1004,
         cmdZoomIn    = 0x1005,
         cmdZoomOut   = 0x1006,
+        cmdToggleView = 0x1007,
     };
 
     void loadAudioFile(const juce::File& file);
@@ -62,7 +68,9 @@ private:
     std::unique_ptr<SelectionOverlay>    m_selectionOverlay;
     std::unique_ptr<TransportBar>        m_transport;
     std::unique_ptr<DragExport>          m_dragExport;
+    std::unique_ptr<SpectrogramComponent> m_spectrogram;
     std::unique_ptr<juce::MenuBarComponent> m_menuBar;
+    ViewMode m_viewMode = WaveformView;
     std::unique_ptr<juce::ApplicationCommandManager> m_commandManager;
     juce::AudioDeviceManager              m_deviceManager;
 
