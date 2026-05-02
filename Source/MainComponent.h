@@ -60,11 +60,19 @@ public:
         cmdToggleView = 0x1007,
         cmdUndo      = 0x1008,
         cmdRedo      = 0x1009,
-        cmdSilence   = 0x100A,
+        cmdSilence    = 0x100A,
+        cmdReverse    = 0x100B,
+        cmdNormalize  = 0x100C,
+        cmdFadeIn     = 0x100D,
+        cmdFadeOut    = 0x100E,
     };
 
     void loadAudioFile(const juce::File& file);
     void silenceSelection();
+    void reverseSelection();
+    void normalizeSelection();
+    void fadeSelectionIn();
+    void fadeSelectionOut();
 
 private:
     std::unique_ptr<SelectionManager>    m_selection;

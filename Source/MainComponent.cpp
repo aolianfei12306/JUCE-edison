@@ -155,6 +155,11 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addCommandItem(m_commandManager.get(), cmdPlaySel);
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdSilence);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdReverse);
+        menu.addCommandItem(m_commandManager.get(), cmdNormalize);
+        menu.addCommandItem(m_commandManager.get(), cmdFadeIn);
+        menu.addCommandItem(m_commandManager.get(), cmdFadeOut);
     }
     else if (idx == 2)
     {
@@ -175,7 +180,8 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() { return n
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
 {
     cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
-                     cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence });
+                     cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence,
+                     cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -217,6 +223,22 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdSilence:
         info.setInfo("Silence Selection", "Set selected audio to silence", "Process", 0);
         info.addDefaultKeypress('d', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdReverse:
+        info.setInfo("Reverse Selection", "Reverse the selected audio", "Process", 0);
+        info.addDefaultKeypress('r', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdNormalize:
+        info.setInfo("Normalize Selection", "Normalize volume of the selected audio", "Process", 0);
+        info.addDefaultKeypress('n', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdFadeIn:
+        info.setInfo("Fade In Selection", "Fade in the selected audio", "Process", 0);
+        info.addDefaultKeypress('i', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdFadeOut:
+        info.setInfo("Fade Out Selection", "Fade out the selected audio", "Process", 0);
+        info.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier);
         break;
     default: break;
     }
@@ -266,6 +288,18 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdSilence:
         silenceSelection();
+        return true;
+    case cmdReverse:
+        reverseSelection();
+        return true;
+    case cmdNormalize:
+        normalizeSelection();
+        return true;
+    case cmdFadeIn:
+        fadeSelectionIn();
+        return true;
+    case cmdFadeOut:
+        fadeSelectionOut();
         return true;
     case cmdToggleView:
         setViewMode(m_viewMode == WaveformView ? SpectrogramView : WaveformView);
@@ -334,6 +368,195 @@ void MainComponent::silenceSelection()
         {
             for (int ch = 0; ch < audio.getNumChannels(); ++ch)
                 audio.clear(ch, start, num);
+        });
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
+}
+
+void MainComponent::reverseSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr)
+        return;
+
+    double sr       = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto action = new AudioModifyAction(*m_fileManager, startSample, numSamples,
+        [](juce::AudioBuffer<float>& audio, int start, int num)
+        {
+            for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+            {
+                auto* samples = audio.getWritePointer(ch);
+                for (int i = 0; i < num / 2; ++i)
+                    std::swap(samples[start + i], samples[start + num - 1 - i]);
+            }
+        });
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
+}
+
+void MainComponent::normalizeSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr)
+        return;
+
+    double sr       = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto action = new AudioModifyAction(*m_fileManager, startSample, numSamples,
+        [](juce::AudioBuffer<float>& audio, int start, int num)
+        {
+            float peak = 0.0f;
+            for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+            {
+                auto* samples = audio.getReadPointer(ch);
+                for (int i = 0; i < num; ++i)
+                    peak = std::max(peak, std::abs(samples[start + i]));
+            }
+            if (peak > 0.0f)
+            {
+                float gain = 1.0f / peak;
+                for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+                {
+                    auto* samples = audio.getWritePointer(ch);
+                    for (int i = 0; i < num; ++i)
+                        samples[start + i] *= gain;
+                }
+            }
+        });
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
+}
+
+void MainComponent::fadeSelectionIn()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr)
+        return;
+
+    double sr       = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto action = new AudioModifyAction(*m_fileManager, startSample, numSamples,
+        [](juce::AudioBuffer<float>& audio, int start, int num)
+        {
+            for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+            {
+                auto* samples = audio.getWritePointer(ch);
+                for (int i = 0; i < num; ++i)
+                {
+                    float gain = static_cast<float>(i) / num;
+                    samples[start + i] *= gain;
+                }
+            }
+        });
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
+}
+
+void MainComponent::fadeSelectionOut()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr)
+        return;
+
+    double sr       = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto action = new AudioModifyAction(*m_fileManager, startSample, numSamples,
+        [](juce::AudioBuffer<float>& audio, int start, int num)
+        {
+            for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+            {
+                auto* samples = audio.getWritePointer(ch);
+                for (int i = 0; i < num; ++i)
+                {
+                    float gain = static_cast<float>(num - i) / num;
+                    samples[start + i] *= gain;
+                }
+            }
         });
 
     action->onAudioChanged = [this]
