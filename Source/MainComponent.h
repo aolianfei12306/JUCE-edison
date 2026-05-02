@@ -11,6 +11,8 @@ class TransportBar;
 class DragExport;
 class SpectrogramComponent;
 class AudioModifyAction;
+#include "MarkerManager.h"
+#include "MarkerOverlay.h"
 
 class MainComponent : public juce::Component,
                       public juce::MenuBarModel,
@@ -65,6 +67,10 @@ public:
         cmdNormalize  = 0x100C,
         cmdFadeIn     = 0x100D,
         cmdFadeOut    = 0x100E,
+        cmdAddMarker    = 0x1010,
+        cmdRemoveMarker = 0x1011,
+        cmdNextMarker   = 0x1012,
+        cmdPrevMarker   = 0x1013,
     };
 
     void loadAudioFile(const juce::File& file);
@@ -86,6 +92,8 @@ private:
     ViewMode m_viewMode = WaveformView;
     std::unique_ptr<juce::ApplicationCommandManager> m_commandManager;
     juce::UndoManager                     m_undoManager;
+    std::unique_ptr<MarkerManager>        m_markerManager;
+    std::unique_ptr<MarkerOverlay>        m_markerOverlay;
     juce::AudioDeviceManager              m_deviceManager;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

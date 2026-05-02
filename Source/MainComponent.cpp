@@ -34,6 +34,10 @@ MainComponent::MainComponent()
     m_transport        = std::make_unique<TransportBar>(*m_fileManager, *m_selection);
     m_dragExport       = std::make_unique<DragExport>(*m_selection, *m_fileManager);
     m_spectrogram      = std::make_unique<SpectrogramComponent>(*m_fileManager);
+
+    m_markerManager = std::make_unique<MarkerManager>();
+    m_markerOverlay = std::make_unique<MarkerOverlay>(*m_markerManager, *m_fileManager, *m_waveform);
+
     m_commandManager   = std::make_unique<juce::ApplicationCommandManager>();
 
     m_deviceManager.initialiseWithDefaultDevices(2, 2);
@@ -42,8 +46,15 @@ MainComponent::MainComponent()
     addAndMakeVisible(*m_waveform);
     addAndMakeVisible(*m_selectionOverlay);
     addAndMakeVisible(*m_spectrogram);
+    addAndMakeVisible(*m_markerOverlay);
     addAndMakeVisible(*m_transport);
     m_spectrogram->setVisible(false); // start with waveform view
+    m_markerOverlay->setAlwaysOnTop(true);
+    m_markerOverlay->setInterceptsMouseClicks(true, true);
+    m_markerOverlay->onMarkerClicked = [this](double time) {
+        m_transport->setPosition(time);
+        m_spectrogram->setPlaybackPosition(time);
+    };
 
     m_menuBar = std::make_unique<juce::MenuBarComponent>(this);
     addAndMakeVisible(*m_menuBar);
@@ -59,6 +70,10 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdToggleView, juce::KeyPress('s', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::deleteKey, 0, 0));
         mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::backspaceKey, 0, 0));
+        mappings->addKeyPress(cmdAddMarker, juce::KeyPress('m', 0, 0));
+        mappings->addKeyPress(cmdRemoveMarker, juce::KeyPress('m', juce::ModifierKeys::shiftModifier, 0));
+        mappings->addKeyPress(cmdNextMarker, juce::KeyPress(']', 0, 0));
+        mappings->addKeyPress(cmdPrevMarker, juce::KeyPress('[', 0, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -66,6 +81,7 @@ MainComponent::MainComponent()
     m_transport->onPositionChanged = [this](double pos) {
         if (pos >= 0.0) {
             // Forward playback position to spectrogram for playhead cursor
+            m_markerOverlay->setPlaybackPosition(pos);
             m_spectrogram->setPlaybackPosition(pos);
             return;
         }
@@ -133,6 +149,7 @@ void MainComponent::resized()
     m_waveform->setBounds(r);
     m_selectionOverlay->setBounds(r);
     m_spectrogram->setBounds(r);
+    m_markerOverlay->setBounds(r);
 }
 
 // ── Menu ──
@@ -200,7 +217,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
 {
     cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
                      cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence,
-                     cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut });
+                     cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
+                     cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -258,6 +276,22 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdFadeOut:
         info.setInfo("Fade Out Selection", "Fade out the selected audio", "Process", 0);
         info.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdAddMarker:
+        info.setInfo("Add Marker (M)", "Add a marker at playhead position", "Markers", 0);
+        info.addDefaultKeypress('m', 0);
+        break;
+    case cmdRemoveMarker:
+        info.setInfo("Remove Marker (Shift+M)", "Remove marker at playhead position", "Markers", 0);
+        info.addDefaultKeypress('m', juce::ModifierKeys::shiftModifier);
+        break;
+    case cmdNextMarker:
+        info.setInfo("Next Marker (])", "Jump to next marker", "Markers", 0);
+        info.addDefaultKeypress(']', 0);
+        break;
+    case cmdPrevMarker:
+        info.setInfo("Previous Marker ([)", "Jump to previous marker", "Markers", 0);
+        info.addDefaultKeypress('[', 0);
         break;
     default: break;
     }
@@ -321,6 +355,44 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
     case cmdFadeOut:
         fadeSelectionOut();
         return true;
+    case cmdAddMarker: {
+        if (!m_fileManager->hasAudio()) return true;
+        double pos = m_transport->getPosition();
+        if (pos < 0.0) pos = 0.0;
+        m_markerManager->addMarker(pos);
+        m_markerOverlay->repaint();
+        return true;
+    }
+    case cmdRemoveMarker: {
+        if (!m_fileManager->hasAudio()) return true;
+        double pos = m_transport->getPosition();
+        if (pos < 0.0) pos = 0.0;
+        m_markerManager->removeMarkerAt(pos);
+        m_markerOverlay->repaint();
+        return true;
+    }
+    case cmdNextMarker: {
+        if (!m_fileManager->hasAudio()) return true;
+        double pos = m_transport->getPosition();
+        double next = m_markerManager->getNextMarker(pos);
+        if (next >= 0.0) {
+            m_transport->setPosition(next);
+            m_spectrogram->setPlaybackPosition(next);
+            m_markerOverlay->repaint();
+        }
+        return true;
+    }
+    case cmdPrevMarker: {
+        if (!m_fileManager->hasAudio()) return true;
+        double pos = m_transport->getPosition();
+        double prev = m_markerManager->getPrevMarker(pos);
+        if (prev >= 0.0) {
+            m_transport->setPosition(prev);
+            m_spectrogram->setPlaybackPosition(prev);
+            m_markerOverlay->repaint();
+        }
+        return true;
+    }
     case cmdToggleView:
         setViewMode(m_viewMode == WaveformView ? SpectrogramView : WaveformView);
         return true;
@@ -595,6 +667,7 @@ void MainComponent::loadAudioFile(const juce::File& file)
 
     m_transport->stop();
     m_selection->clearSelection();
+    m_markerManager->clear();
 
     if (m_fileManager->loadFile(file))
     {
@@ -603,6 +676,7 @@ void MainComponent::loadAudioFile(const juce::File& file)
             thumb->addChangeListener(this);
 
         m_transport->setPosition(0.0);
+        m_markerOverlay->setTotalDuration(m_fileManager->getDurationSec());
 
         if (m_viewMode == SpectrogramView)
             m_spectrogram->rebuildFromAudio();
