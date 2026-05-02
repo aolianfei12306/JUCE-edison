@@ -10,6 +10,7 @@ class SelectionOverlay;
 class TransportBar;
 class DragExport;
 class SpectrogramComponent;
+class AudioModifyAction;
 
 class MainComponent : public juce::Component,
                       public juce::MenuBarModel,
@@ -57,9 +58,13 @@ public:
         cmdZoomIn    = 0x1005,
         cmdZoomOut   = 0x1006,
         cmdToggleView = 0x1007,
+        cmdUndo      = 0x1008,
+        cmdRedo      = 0x1009,
+        cmdSilence   = 0x100A,
     };
 
     void loadAudioFile(const juce::File& file);
+    void silenceSelection();
 
 private:
     std::unique_ptr<SelectionManager>    m_selection;
@@ -72,6 +77,7 @@ private:
     std::unique_ptr<juce::MenuBarComponent> m_menuBar;
     ViewMode m_viewMode = WaveformView;
     std::unique_ptr<juce::ApplicationCommandManager> m_commandManager;
+    juce::UndoManager                     m_undoManager;
     juce::AudioDeviceManager              m_deviceManager;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

@@ -6,6 +6,7 @@
 #include "TransportBar.h"
 #include "DragExport.h"
 #include "SpectrogramComponent.h"
+#include "UndoableActions.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
@@ -148,7 +149,12 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
     }
     else if (idx == 1)
     {
+        menu.addCommandItem(m_commandManager.get(), cmdUndo);
+        menu.addCommandItem(m_commandManager.get(), cmdRedo);
+        menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdPlaySel);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdSilence);
     }
     else if (idx == 2)
     {
@@ -168,7 +174,8 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() { return n
 
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
 {
-    cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn, cmdZoomOut, cmdToggleView });
+    cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
+                     cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -198,6 +205,18 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdToggleView:
         info.setInfo("Toggle View (Ctrl+S)", "Switch between waveform and spectrogram", "View", 0);
         info.addDefaultKeypress('s', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdUndo:
+        info.setInfo("Undo", "Undo last action", "Edit", 0);
+        info.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdRedo:
+        info.setInfo("Redo", "Redo last undone action", "Edit", 0);
+        info.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
+        break;
+    case cmdSilence:
+        info.setInfo("Silence Selection", "Set selected audio to silence", "Process", 0);
+        info.addDefaultKeypress('d', juce::ModifierKeys::ctrlModifier);
         break;
     default: break;
     }
@@ -234,6 +253,19 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
     case cmdZoomOut:
         m_waveform->setZoom(m_waveform->getZoom() / 1.5);
         m_waveform->repaint();
+        return true;
+    case cmdUndo:
+        m_undoManager.undo();
+        m_waveform->repaint();
+        m_spectrogram->rebuildFromAudio();
+        return true;
+    case cmdRedo:
+        m_undoManager.redo();
+        m_waveform->repaint();
+        m_spectrogram->rebuildFromAudio();
+        return true;
+    case cmdSilence:
+        silenceSelection();
         return true;
     case cmdToggleView:
         setViewMode(m_viewMode == WaveformView ? SpectrogramView : WaveformView);
@@ -272,6 +304,46 @@ void MainComponent::filesDropped(const juce::StringArray& files, int, int)
 void MainComponent::changeListenerCallback(juce::ChangeBroadcaster*)
 {
     m_waveform->repaint();
+}
+
+void MainComponent::silenceSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr)
+        return;
+
+    double sr       = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    // Clamp to buffer bounds
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto action = new AudioModifyAction(*m_fileManager, startSample, numSamples,
+        [](juce::AudioBuffer<float>& audio, int start, int num)
+        {
+            for (int ch = 0; ch < audio.getNumChannels(); ++ch)
+                audio.clear(ch, start, num);
+        });
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
 }
 
 void MainComponent::loadAudioFile(const juce::File& file)
