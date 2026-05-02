@@ -94,6 +94,8 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdAddRegion, juce::KeyPress('r', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdNextRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdPrevRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
+        mappings->addKeyPress(cmdZoomToSelection, juce::KeyPress('z', 0, 0));
+        mappings->addKeyPress(cmdFitAll, juce::KeyPress('f', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -257,7 +259,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
                      cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence,
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
-                     cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion });
+                     cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
+                     cmdZoomToSelection, cmdFitAll });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -332,6 +335,14 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.setInfo("Previous Marker ([)", "Jump to previous marker", "Markers", 0);
         info.addDefaultKeypress('[', 0);
         break;
+    case cmdZoomToSelection:
+        info.setInfo("Zoom to Selection (Z)", "Zoom waveform to fit the current selection", "View", 0);
+        info.addDefaultKeypress('z', 0);
+        break;
+    case cmdFitAll:
+        info.setInfo("Fit All (Ctrl+Shift+F)", "Reset zoom to show the entire audio file", "View", 0);
+        info.addDefaultKeypress('f', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
+        break;
     case cmdAddRegion:
         info.setInfo("Add Region (Ctrl+Shift+R)", "Add region from current selection", "Regions", 0);
         info.addDefaultKeypress('r', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
@@ -388,11 +399,13 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         m_undoManager.undo();
         m_waveform->repaint();
         m_spectrogram->rebuildFromAudio();
+        m_zoomedToSelection = false;
         return true;
     case cmdRedo:
         m_undoManager.redo();
         m_waveform->repaint();
         m_spectrogram->rebuildFromAudio();
+        m_zoomedToSelection = false;
         return true;
     case cmdSilence:
         silenceSelection();
@@ -449,6 +462,12 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
     }
     case cmdToggleView:
         setViewMode(m_viewMode == WaveformView ? SpectrogramView : WaveformView);
+        return true;
+    case cmdZoomToSelection:
+        zoomToSelection();
+        return true;
+    case cmdFitAll:
+        fitAll();
         return true;
     case cmdAddRegion:
         addRegionFromSelection();
@@ -530,6 +549,58 @@ void MainComponent::filesDropped(const juce::StringArray& files, int, int)
 
 void MainComponent::changeListenerCallback(juce::ChangeBroadcaster*)
 {
+    m_waveform->repaint();
+}
+
+void MainComponent::zoomToSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    // Toggle: if already zoomed to selection, restore previous view
+    if (m_zoomedToSelection)
+    {
+        m_waveform->setZoom(m_preZoomLevel);
+        m_waveform->setHorizontalOffset(m_preZoomOffset);
+        m_zoomedToSelection = false;
+        m_waveform->repaint();
+        return;
+    }
+
+    // Store current view state before zooming
+    m_preZoomLevel = m_waveform->getZoom();
+    m_preZoomOffset = m_waveform->getHorizontalOffset();
+
+    double totalDur = m_fileManager->getDurationSec();
+    double selStart = m_selection->getSelectionStart();
+    double selEnd   = m_selection->getSelectionEnd();
+    double selDur   = selEnd - selStart;
+
+    if (selDur <= 0.0) return;
+
+    // Zoom to fit selection with 20% padding
+    double padding = selDur * 0.2;
+    double visibleDur = selDur + padding;
+    double newZoom = totalDur / visibleDur;
+    m_waveform->setZoom(newZoom);
+
+    // Offset view so selection starts at ~6% from left edge
+    double offsetTime = std::max(0.0, selStart - padding * 0.3);
+    m_waveform->setHorizontalOffset(offsetTime / totalDur);
+
+    m_zoomedToSelection = true;
+    m_waveform->repaint();
+}
+
+void MainComponent::fitAll()
+{
+    if (!m_fileManager->hasAudio())
+        return;
+
+    // Restore zoom to show entire file
+    m_waveform->setZoom(1.0);
+    m_waveform->setHorizontalOffset(0.0);
+    m_zoomedToSelection = false;
     m_waveform->repaint();
 }
 

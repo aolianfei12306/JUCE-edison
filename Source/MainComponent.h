@@ -73,14 +73,18 @@ public:
         cmdRemoveMarker = 0x1011,
         cmdNextMarker   = 0x1012,
         cmdPrevMarker   = 0x1013,
-        cmdAddRegion    = 0x1020,
-        cmdRemoveRegion  = 0x1021,
-        cmdNextRegion   = 0x1022,
-        cmdPrevRegion   = 0x1023,
+        cmdAddRegion         = 0x1020,
+        cmdRemoveRegion       = 0x1021,
+        cmdNextRegion         = 0x1022,
+        cmdPrevRegion         = 0x1023,
+        cmdZoomToSelection    = 0x1030,
+        cmdFitAll             = 0x1031,
     };
 
     void loadAudioFile(const juce::File& file);
     void addRegionFromSelection();
+    void zoomToSelection();
+    void fitAll();
     void silenceSelection();
     void reverseSelection();
     void normalizeSelection();
@@ -104,6 +108,9 @@ private:
     std::unique_ptr<RegionManager>        m_regionManager;
     std::unique_ptr<RegionOverlay>        m_regionOverlay;
     int m_currentRegionCycler = -1;
+    bool m_zoomedToSelection = false;
+    double m_preZoomLevel = 1.0;
+    double m_preZoomOffset = 0.0;
     juce::AudioDeviceManager              m_deviceManager;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
