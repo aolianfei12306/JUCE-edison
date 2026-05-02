@@ -10,6 +10,7 @@
 #include "LoopOverlay.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <vector>
 
 MainComponent::MainComponent()
 {
@@ -684,11 +685,11 @@ void MainComponent::silenceSelection()
     if (buf == nullptr)
         return;
 
-    double sr       = m_fileManager->getSampleRate();
+    double sampleRate = m_fileManager->getSampleRate();
     auto startTime  = m_selection->getSelectionStart();
     auto endTime    = m_selection->getSelectionEnd();
-    int startSample = static_cast<int>(std::round(startTime * sr));
-    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int startSample = static_cast<int>(std::round(startTime * sampleRate));
+    int endSample   = static_cast<int>(std::round(endTime * sampleRate));
     int numSamples  = endSample - startSample;
 
     if (numSamples <= 0)
@@ -699,10 +700,50 @@ void MainComponent::silenceSelection()
     numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
 
     auto action = new AudioModifyAction(*m_fileManager, startSample, numSamples,
-        [](juce::AudioBuffer<float>& audio, int start, int num)
+        [sampleRate](juce::AudioBuffer<float>& audio, int start, int num)
         {
+            const int maxCrossfadeSamples = static_cast<int>(0.005 * sampleRate);
+            const int crossfadeSamples = juce::jmin(maxCrossfadeSamples, num / 3);
+            const int middleStart = start + crossfadeSamples;
+            const int middleLength = juce::jmax(0, num - (crossfadeSamples * 2));
+
             for (int ch = 0; ch < audio.getNumChannels(); ++ch)
-                audio.clear(ch, start, num);
+            {
+                auto* readSamples = audio.getReadPointer(ch);
+                auto* writeSamples = audio.getWritePointer(ch);
+
+                std::vector<float> leftEdge(static_cast<size_t>(crossfadeSamples));
+                std::vector<float> rightEdge(static_cast<size_t>(crossfadeSamples));
+
+                for (int i = 0; i < crossfadeSamples; ++i)
+                {
+                    leftEdge[static_cast<size_t>(i)] = readSamples[start + i];
+                    rightEdge[static_cast<size_t>(i)] = readSamples[start + num - crossfadeSamples + i];
+                }
+
+                if (crossfadeSamples > 1)
+                {
+                    const float fadeDenominator = static_cast<float>(crossfadeSamples - 1);
+
+                    for (int i = 0; i < crossfadeSamples; ++i)
+                    {
+                        const float leftGain = 1.0f - (static_cast<float>(i) / fadeDenominator);
+                        writeSamples[start + i] = leftEdge[static_cast<size_t>(i)] * leftGain;
+
+                        const float rightGain = static_cast<float>(i) / fadeDenominator;
+                        writeSamples[start + num - crossfadeSamples + i]
+                            = rightEdge[static_cast<size_t>(i)] * rightGain;
+                    }
+                }
+                else if (crossfadeSamples == 1)
+                {
+                    writeSamples[start] = 0.0f;
+                    writeSamples[start + num - 1] = 0.0f;
+                }
+
+                if (middleLength > 0)
+                    juce::FloatVectorOperations::clear(writeSamples + middleStart, middleLength);
+            }
         });
 
     action->onAudioChanged = [this]
