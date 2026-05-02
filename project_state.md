@@ -12,9 +12,9 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P3: 交叉淡化 (Crossfade) 完成 |
-| **完成度** | ~60% (P0: 100%, P1: 100%, P2: 100%, P3: 20%) |
-| **最后更新** | 2026-05-02 21:48 CST |
+| **阶段** | P3: 吸附网格 (Snap-to-Grid) 完成 |
+| **完成度** | ~70% (P0: 100%, P1: 100%, P2: 100%, P3: 40%) |
+| **最后更新** | 2026-05-02 22:38 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -33,6 +33,7 @@
 | 2026-05-02 | P2 Zoom | Zoom-to-Selection——Z 键缩放至选区，Ctrl+Shift+F 恢复完整视图 | ✅ |
 | 2026-05-02 | P3 Loop | 循环/AB复读播放——LoopManager + LoopOverlay 半透明高亮，L 键切换，选区或全文件范围内循环，构建通过 | ✅ |
 | 2026-05-02 | P3 Crossfade | 选区静音自动交叉淡化——5ms线性淡入淡出边界，消除咔嗒声，Undo兼容 | ✅ |
+| 2026-05-02 | P3 Grid | Snap-to-Grid——G 键切换，默认120BPM/4分音符网格，选区吸附到节拍网格，网格线可视化（节拍线7%透明度+小节线15%透明度），与零交叉吸附可协同使用 | ✅ |
 
 ## 版本里程碑
 
@@ -62,7 +63,7 @@
 - [x] 循环/AB复读（Loop/Cycle Playback：L 键切换，从选区或全文件建立循环范围）
 - [x] 零交叉吸附（Selection Snapping to Zero Crossings）
 - [x] 选区操作交叉淡化（Crossfade on Selection Editing）
-- [ ] 吸附网格（Snap-to-Grid：节拍/拍子对齐）
+- [x] 吸附网格（Snap-to-Grid：节拍/拍子对齐）
 
 ## 已知 Bug
 
