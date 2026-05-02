@@ -110,11 +110,26 @@ void WaveformThumbnail::drawWaveform(juce::Graphics& g, const juce::Rectangle<fl
     g.drawHorizontalLine(static_cast<int>(midY), bounds.getX(), bounds.getRight());
 }
 
-void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& /*e*/,
+void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& e,
                                         const juce::MouseWheelDetails& w)
 {
     if (w.deltaY == 0.0) return;
-    double factor = (w.deltaY > 0) ? 1.15 : 1.0 / 1.15;
-    m_zoom = juce::jlimit(0.001, 10000.0, m_zoom * factor);
+
+    if (e.mods.isCtrlDown())
+    {
+        // Ctrl+wheel: fine zoom
+        double factor = (w.deltaY > 0) ? 1.05 : 1.0 / 1.05;
+        m_zoom = juce::jlimit(0.001, 10000.0, m_zoom * factor);
+    }
+    else
+    {
+        // Plain wheel: horizontal pan/scroll (deltaY>0 = scroll right = move view forward)
+        double totalDur = m_fileManager.hasAudio() ? m_fileManager.getDurationSec() : 1.0;
+        double visibleDur = totalDur / m_zoom;
+        double scrollAmount = visibleDur * 0.1 * w.deltaY;
+        double offsetFrac = scrollAmount / totalDur;
+        setHorizontalOffset(m_horizontalOffset + offsetFrac);
+    }
+
     repaint();
 }

@@ -14,6 +14,7 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
 
     void rebuildFromAudio();
     void clear();

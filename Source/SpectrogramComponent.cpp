@@ -62,7 +62,6 @@ SpectrogramComponent::SpectrogramComponent(AudioFileManager& fileManager)
     for (int i = 0; i < fftSize; ++i)
         m_window[i] = hannWindow(i, fftSize);
 
-    setInterceptsMouseClicks(false, false);
 }
 
 // ── STFT computation ──
@@ -281,6 +280,32 @@ void SpectrogramComponent::paint(juce::Graphics& g)
                    area.getWidth() - 50, y - 6, 45, 12,
                    juce::Justification::centredRight);
     }
+}
+
+void SpectrogramComponent::mouseWheelMove(const juce::MouseEvent& e,
+                                           const juce::MouseWheelDetails& w)
+{
+    if (w.deltaY == 0.0 || !m_fileManager.hasAudio()) return;
+
+    double totalDuration = m_fileManager.getDurationSec();
+
+    if (e.mods.isCtrlDown())
+    {
+        // Ctrl+wheel: fine zoom
+        double factor = (w.deltaY > 0) ? 1.05 : 1.0 / 1.05;
+        m_hZoom = std::max(0.1, m_hZoom * factor);
+    }
+    else
+    {
+        // Plain wheel: horizontal pan/scroll
+        double viewDuration = totalDuration / m_hZoom;
+        double scrollAmount = viewDuration * 0.1 * w.deltaY;
+        double newOffset = m_viewOffset + scrollAmount;
+        double maxOffset = totalDuration - viewDuration;
+        m_viewOffset = std::clamp(newOffset, 0.0, maxOffset);
+    }
+
+    repaint();
 }
 
 void SpectrogramComponent::resized()
