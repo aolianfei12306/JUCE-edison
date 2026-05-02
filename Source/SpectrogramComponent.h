@@ -17,6 +17,7 @@ public:
 
     void rebuildFromAudio();
     void clear();
+    void setPlaybackPosition(double posSec) noexcept;
 
     void setZoom(double hZoom) noexcept;
     double getZoom() const noexcept { return m_hZoom; }
@@ -50,8 +51,10 @@ private:
     bool m_dirty = true;
 
     // View state
-    double m_hZoom      = 1.0;
-    double m_viewOffset = 0.0;
+    double m_hZoom            = 1.0;
+    double m_viewOffset       = 0.0;
+    double m_playbackPosition = -1.0;
+    bool   m_followPlayback   = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrogramComponent)
 };

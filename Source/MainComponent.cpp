@@ -47,9 +47,13 @@ MainComponent::MainComponent()
     }
     setInterceptsMouseClicks(true, true);
 
-    // Recording finished callback
+    // Recording finished callback + spectrogram playhead
     m_transport->onPositionChanged = [this](double pos) {
-        if (pos >= 0.0) return; // normal position update, ignore
+        if (pos >= 0.0) {
+            // Forward playback position to spectrogram for playhead cursor
+            m_spectrogram->setPlaybackPosition(pos);
+            return;
+        }
         // pos < 0 means recording finished
         auto* recorded = m_transport->getRecordedBuffer();
         if (recorded && recorded->getNumSamples() > 0)
@@ -264,6 +268,7 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdStop:
         m_transport->stop();
+        m_spectrogram->setPlaybackPosition(-1.0);
         return true;
     case cmdPlaySel:
         m_transport->playSelection();

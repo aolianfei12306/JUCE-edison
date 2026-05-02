@@ -236,6 +236,29 @@ void SpectrogramComponent::paint(juce::Graphics& g)
                 0, 0, area.getWidth(), area.getHeight(),   // dest
                 static_cast<float>(startFrame), 0.0f, srcW, srcH); // src
 
+    // ── Playhead cursor ──
+    if (m_playbackPosition >= 0.0)
+    {
+        if (m_playbackPosition >= startSec && m_playbackPosition <= endSec)
+        {
+            float playheadX = static_cast<float>(
+                (m_playbackPosition - startSec) / viewDuration * area.getWidth());
+
+            // Cursor line
+            g.setColour(juce::Colours::white.withAlpha(0.85f));
+            g.drawVerticalLine(static_cast<int>(playheadX), 0.0f, area.getHeight());
+
+            // Top triangle
+            float triSize = 8.0f;
+            juce::Path tri;
+            tri.addTriangle(playheadX, 0.0f,
+                            playheadX - triSize, triSize,
+                            playheadX + triSize, triSize);
+            g.setColour(juce::Colours::cyan.withAlpha(0.7f));
+            g.fillPath(tri);
+        }
+    }
+
     // Draw frequency axis labels on the right
     g.setFont(10.0f);
     g.setColour(juce::Colours::white.withAlpha(0.4f));
@@ -263,6 +286,29 @@ void SpectrogramComponent::paint(juce::Graphics& g)
 void SpectrogramComponent::resized()
 {
     // Image is pre-rendered at FFT grid resolution; no per-resize re-render.
+}
+
+void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
+{
+    m_playbackPosition = posSec;
+
+    // Auto-scroll: follow playhead when it approaches right edge
+    if (posSec >= 0.0 && m_followPlayback && m_fileManager.hasAudio())
+    {
+        double totalDuration = m_fileManager.getDurationSec();
+        double viewDuration = totalDuration / m_hZoom;
+        double rightEdge = m_viewOffset + viewDuration;
+        double threshold = viewDuration * 0.15;
+
+        if (posSec > rightEdge - threshold)
+        {
+            // Keep playhead at ~70% from left edge
+            m_viewOffset = posSec - viewDuration * 0.7;
+            m_viewOffset = std::max(0.0, m_viewOffset);
+        }
+    }
+
+    repaint();
 }
 
 void SpectrogramComponent::setZoom(double hZoom) noexcept
