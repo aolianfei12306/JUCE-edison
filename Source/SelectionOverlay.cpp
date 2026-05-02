@@ -1,12 +1,19 @@
 #include "SelectionOverlay.h"
 #include "SelectionManager.h"
 #include "WaveformThumbnail.h"
+#include "AudioFileManager.h"
 
-SelectionOverlay::SelectionOverlay(SelectionManager& selection, WaveformThumbnail& thumbnail)
-    : m_selection(selection), m_thumbnail(thumbnail)
+SelectionOverlay::SelectionOverlay(SelectionManager& selection, WaveformThumbnail& thumbnail,
+                                   AudioFileManager& fileManager)
+    : m_selection(selection), m_thumbnail(thumbnail), m_fileManager(fileManager)
 {
     setInterceptsMouseClicks(true, false);
     setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+double SelectionOverlay::snapTime(double t) const noexcept
+{
+    return m_selection.snapTime(t, m_fileManager);
 }
 
 SelectionOverlay::DragMode SelectionOverlay::hitTestEdge(const juce::MouseEvent& e) const
@@ -54,7 +61,7 @@ void SelectionOverlay::mouseDown(const juce::MouseEvent& e)
         }
 
         m_dragMode = DragMode::Create;
-        m_dragStartTime = t;
+        m_dragStartTime = snapTime(t);
     }
 
     repaint();
@@ -64,6 +71,8 @@ void SelectionOverlay::mouseDrag(const juce::MouseEvent& e)
 {
     double t = m_thumbnail.xToTime(e.position.x);
     t = juce::jmax(0.0, t);
+    // Snap the dragged edge to zero crossing when enabled
+    t = snapTime(t);
 
     switch (m_dragMode)
     {
@@ -104,20 +113,31 @@ void SelectionOverlay::paint(juce::Graphics& /*g*/) {}
 
 void SelectionOverlay::drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area)
 {
-    if (!m_selection.hasSelection()) return;
+    auto r = area;
 
-    auto start = m_selection.getSelectionStart();
-    auto end   = m_selection.getSelectionEnd();
-    auto dur   = m_selection.getSelectionDuration();
+    if (m_selection.hasSelection())
+    {
+        auto start = m_selection.getSelectionStart();
+        auto end   = m_selection.getSelectionEnd();
+        auto dur   = m_selection.getSelectionDuration();
 
-    auto fmt = [](double sec) -> juce::String {
-        int m = static_cast<int>(sec) / 60;
-        double r = sec - m * 60;
-        return juce::String::formatted("%02d:%06.3f", m, r);
-    };
+        auto fmt = [](double sec) -> juce::String {
+            int m = static_cast<int>(sec) / 60;
+            double s = sec - m * 60;
+            return juce::String::formatted("%02d:%06.3f", m, s);
+        };
 
-    g.setColour(juce::Colour(0xCCE0E0E0));
-    g.setFont(12.0f);
-    g.drawText("Sel: " + fmt(start) + " - " + fmt(end) + " (" + fmt(dur) + ")",
-               area, juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xCCE0E0E0));
+        g.setFont(12.0f);
+        g.drawText("Sel: " + fmt(start) + " - " + fmt(end) + " (" + fmt(dur) + ")",
+                   r, juce::Justification::centredLeft);
+    }
+
+    // Show snap status
+    if (m_selection.isSnapToZero())
+    {
+        g.setColour(juce::Colour(0xCCFFCC44));
+        g.setFont(12.0f);
+        g.drawText("  [Snap: ZC]", r, juce::Justification::centredRight);
+    }
 }

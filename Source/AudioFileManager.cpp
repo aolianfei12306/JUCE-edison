@@ -1,4 +1,5 @@
 #include "AudioFileManager.h"
+#include <cmath>
 
 AudioFileManager::AudioFileManager()
 {
@@ -47,4 +48,81 @@ double AudioFileManager::getDurationSec() const noexcept
     if (m_buffer == nullptr || m_sampleRate <= 0.0)
         return 0.0;
     return static_cast<double>(m_buffer->getNumSamples()) / m_sampleRate;
+}
+
+double AudioFileManager::snapToZeroCrossing(double timeSec, int maxSearchSamples) const noexcept
+{
+    if (!hasAudio() || m_buffer == nullptr || m_sampleRate <= 0.0)
+        return timeSec;
+
+    const int totalSamples = m_buffer->getNumSamples();
+    const int centerSample = static_cast<int>(std::round(timeSec * m_sampleRate));
+
+    if (centerSample < 0 || centerSample >= totalSamples)
+        return timeSec;
+
+    // Use channel 0 for zero-crossing search
+    const float* samples = m_buffer->getReadPointer(0);
+    if (samples == nullptr)
+        return timeSec;
+
+    // Search backward from centerSample
+    int bestBackward = -1;
+    for (int i = centerSample; i > 0 && i > centerSample - maxSearchSamples; --i)
+    {
+        // Check if there's a sign change between samples[i-1] and samples[i]
+        if ((samples[i - 1] <= 0.0f && samples[i] > 0.0f) ||
+            (samples[i - 1] >= 0.0f && samples[i] < 0.0f))
+        {
+            bestBackward = i;
+            break;
+        }
+    }
+
+    // Search forward from centerSample
+    int bestForward = -1;
+    for (int i = centerSample; i < totalSamples - 1 && i < centerSample + maxSearchSamples; ++i)
+    {
+        if ((samples[i] <= 0.0f && samples[i + 1] > 0.0f) ||
+            (samples[i] >= 0.0f && samples[i + 1] < 0.0f))
+        {
+            bestForward = i;
+            break;
+        }
+    }
+
+    // Pick nearest zero crossing
+    int bestSample = -1;
+    if (bestBackward >= 0 && bestForward >= 0)
+    {
+        int distBack = centerSample - bestBackward;
+        int distFwd  = bestForward - centerSample;
+        bestSample = (distBack <= distFwd) ? bestBackward : bestForward;
+    }
+    else if (bestBackward >= 0)
+    {
+        bestSample = bestBackward;
+    }
+    else if (bestForward >= 0)
+    {
+        bestSample = bestForward;
+    }
+
+    if (bestSample < 0)
+        return timeSec; // no zero crossing found - return original time
+
+    // Sub-sample interpolation: find exact crossing position between bestSample-1 and bestSample
+    if (bestSample > 0 && bestSample < totalSamples)
+    {
+        float a = samples[bestSample - 1];
+        float b = samples[bestSample];
+        if (std::abs(a - b) > 1e-10f)
+        {
+            double t = static_cast<double>(-a) / static_cast<double>(b - a);
+            if (t >= 0.0 && t <= 1.0)
+                return (static_cast<double>(bestSample - 1) + t) / m_sampleRate;
+        }
+    }
+
+    return static_cast<double>(bestSample) / m_sampleRate;
 }

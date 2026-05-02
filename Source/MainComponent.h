@@ -83,6 +83,7 @@ public:
         cmdZoomToSelection    = 0x1030,
         cmdFitAll             = 0x1031,
         cmdToggleLoop         = 0x1040,
+        cmdToggleSnap         = 0x1050,
     };
 
     void loadAudioFile(const juce::File& file);
@@ -95,6 +96,7 @@ public:
     void normalizeSelection();
     void fadeSelectionIn();
     void fadeSelectionOut();
+    void toggleSnapToZero();
 
 private:
     std::unique_ptr<SelectionManager>    m_selection;

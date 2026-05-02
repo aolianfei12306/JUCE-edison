@@ -12,9 +12,9 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P2: 标记/提示点 (Markers) 完成 |
-| **完成度** | ~43% (P0: 100%, P1: 100%, P2: 100%) |
-| **最后更新** | 2026-05-02 20:16 CST |
+| **阶段** | P3: 循环播放 (Loop) 完成 |
+| **完成度** | ~48% (P0: 100%, P1: 100%, P2: 100%, P3: 10%) |
+| **最后更新** | 2026-05-02 20:46 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -31,6 +31,7 @@
 | 2026-05-02 | P0 导出 | DragExport 集成——Alt+选区内拖动导出 WAV（修复 44100 硬编码采样率 Bug），构建通过 | ✅ |
 | 2026-05-02 | P2 标记 | Marker/Cue Points——M键添加，Shift+M移除，[/]导航，青色标记旗标+点击跳转 | ✅ |
 | 2026-05-02 | P2 Zoom | Zoom-to-Selection——Z 键缩放至选区，Ctrl+Shift+F 恢复完整视图 | ✅ |
+| 2026-05-02 | P3 Loop | 循环/AB复读播放——LoopManager + LoopOverlay 半透明高亮，L 键切换，选区或全文件范围内循环，构建通过 | ✅ |
 
 ## 版本里程碑
 
@@ -56,6 +57,12 @@
 - [x] 标记/提示点（M/Shift+M/[/]快捷键，青色标记旗标，点击跳转）
 - [x] 快捷键绑定（空格播放/暂停，Delete/Backspace 静音）
 
+### P3 — 工作流与专业功能
+- [x] 循环/AB复读（Loop/Cycle Playback：L 键切换，从选区或全文件建立循环范围）
+- [ ] 零交叉吸附（Selection Snapping to Zero Crossings）
+- [ ] 选区操作交叉淡化（Crossfade on Selection Editing）
+- [ ] 吸附网格（Snap-to-Grid：节拍/拍子对齐）
+
 ## 已知 Bug
 
 （暂无）
@@ -63,9 +70,15 @@
 ## 待处理
 
 1. **P0 DragExport** — 骨架完成，需在 Windows 实际测试拖拽交互（当前 Linux 环境无法验证）。
-2. **频谱视图优化** — 长音频文件（>10 min）的 STFT 内存上限需优化；实时播放跟随渲染待实现。
+2. **频谱视图优化** — 长音频文件（>10 min）的 STFT 内存上限需优化。
 3. **选区处理** — 全部实现：Silence / Reverse / Normalize / Fade In-Out。✅
-4. **快捷键表** — 空格播放/暂停，Delete/Backspace 静音，其余已绑定。系结到 README 的 Key Bindings 段落。✅
+4. **快捷键表** — 已绑定到命令系统，需系结到 README。✅
+
+## P3 待办
+
+1. **P3-002: 零交叉吸附** — 选区边界吸附到波形零交叉点，消除编辑咔嗒声。
+2. **P3-003: 交叉淡化** — 选区静音操作时自动交叉淡化处理。
+3. **P3-004: 吸附网格** — 按节拍/拍子对齐的吸附网格。
 
 ## 架构设计
 
@@ -85,6 +98,8 @@ open-edison/
 │   ├── UndoableActions.h/cpp     # Undo/Redo 动作（AudioModifyAction）
 │   ├── MarkerManager.h           # 标记点管理（增删改查）
 │   ├── MarkerOverlay.h/cpp       # 标记点覆盖层渲染（青色旗标+竖线+标签）
+│   ├── LoopManager.h             # 循环播放状态管理（启用/停止/范围）
+│   ├── LoopOverlay.h/cpp         # 循环范围覆盖层渲染（半透明高亮+边界线）
 ├── .gitignore
 ├── project_state.md
 └── README.md

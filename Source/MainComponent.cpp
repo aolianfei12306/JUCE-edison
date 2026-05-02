@@ -16,7 +16,7 @@ MainComponent::MainComponent()
     m_selection        = std::make_unique<SelectionManager>();
     m_fileManager      = std::make_unique<AudioFileManager>();
     m_waveform         = std::make_unique<WaveformThumbnail>(*m_fileManager, *m_selection);
-    m_selectionOverlay = std::make_unique<SelectionOverlay>(*m_selection, *m_waveform);
+    m_selectionOverlay = std::make_unique<SelectionOverlay>(*m_selection, *m_waveform, *m_fileManager);
     m_selectionOverlay->onExportDragStarted = [this](auto* src) {
         const auto now = juce::Time::getCurrentTime();
         m_dragExport->startDragIfOverSelection(
@@ -103,6 +103,7 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdZoomToSelection, juce::KeyPress('z', 0, 0));
         mappings->addKeyPress(cmdFitAll, juce::KeyPress('f', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdToggleLoop, juce::KeyPress('l', 0, 0));
+        mappings->addKeyPress(cmdToggleSnap, juce::KeyPress('x', 0, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -268,7 +269,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
                      cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
-                     cmdZoomToSelection, cmdFitAll, cmdToggleLoop });
+                     cmdZoomToSelection, cmdFitAll, cmdToggleLoop, cmdToggleSnap });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -369,6 +370,10 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdToggleLoop:
         info.setInfo("Toggle Loop (L)", "Toggle loop/cycle playback mode", "Transport", 0);
         info.addDefaultKeypress('l', 0);
+        break;
+    case cmdToggleSnap:
+        info.setInfo("Toggle Snap to Zero (X)", "Toggle zero crossing snapping for selection edges", "Snap", 0);
+        info.addDefaultKeypress('x', 0);
         break;
     default: break;
     }
@@ -483,6 +488,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdToggleLoop:
         toggleLoop();
+        return true;
+    case cmdToggleSnap:
+        toggleSnapToZero();
         return true;
     case cmdAddRegion:
         addRegionFromSelection();
@@ -894,6 +902,12 @@ void MainComponent::fadeSelectionOut()
     };
 
     m_undoManager.perform(action);
+}
+
+void MainComponent::toggleSnapToZero()
+{
+    m_selection->toggleSnapToZero();
+    repaint();
 }
 
 void MainComponent::loadAudioFile(const juce::File& file)

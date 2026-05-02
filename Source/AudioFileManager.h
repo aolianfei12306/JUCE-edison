@@ -30,6 +30,13 @@ public:
     const juce::String& getFileName() const noexcept { return m_fileName; }
     const juce::File&   getFile()     const noexcept { return m_file; }
 
+    /** Find the nearest zero crossing to a given time position.
+     *  Searches forward and backward within maxSearchSamples from the given time.
+     *  Returns the time of the nearest zero crossing (sub-sample interpolated),
+     *  or the original time if no zero crossing is found within range.
+     */
+    double snapToZeroCrossing(double timeSec, int maxSearchSamples = 128) const noexcept;
+
 private:
     juce::AudioFormatManager                m_formatManager;
     std::unique_ptr<juce::AudioBuffer<float>> m_buffer;
