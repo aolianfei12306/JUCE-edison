@@ -13,6 +13,8 @@ class SpectrogramComponent;
 class AudioModifyAction;
 #include "MarkerManager.h"
 #include "MarkerOverlay.h"
+#include "RegionManager.h"
+#include "RegionOverlay.h"
 
 class MainComponent : public juce::Component,
                       public juce::MenuBarModel,
@@ -71,9 +73,14 @@ public:
         cmdRemoveMarker = 0x1011,
         cmdNextMarker   = 0x1012,
         cmdPrevMarker   = 0x1013,
+        cmdAddRegion    = 0x1020,
+        cmdRemoveRegion  = 0x1021,
+        cmdNextRegion   = 0x1022,
+        cmdPrevRegion   = 0x1023,
     };
 
     void loadAudioFile(const juce::File& file);
+    void addRegionFromSelection();
     void silenceSelection();
     void reverseSelection();
     void normalizeSelection();
@@ -94,6 +101,9 @@ private:
     juce::UndoManager                     m_undoManager;
     std::unique_ptr<MarkerManager>        m_markerManager;
     std::unique_ptr<MarkerOverlay>        m_markerOverlay;
+    std::unique_ptr<RegionManager>        m_regionManager;
+    std::unique_ptr<RegionOverlay>        m_regionOverlay;
+    int m_currentRegionCycler = -1;
     juce::AudioDeviceManager              m_deviceManager;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)

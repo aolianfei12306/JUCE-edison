@@ -37,6 +37,22 @@ MainComponent::MainComponent()
 
     m_markerManager = std::make_unique<MarkerManager>();
     m_markerOverlay = std::make_unique<MarkerOverlay>(*m_markerManager, *m_fileManager, *m_waveform);
+    m_regionManager = std::make_unique<RegionManager>();
+    m_regionOverlay = std::make_unique<RegionOverlay>(*m_regionManager, *m_fileManager, *m_selection, *m_waveform);
+    m_regionOverlay->onRegionSelected = [this](const RegionManager::Region& region) {
+        m_selection->setSelection(region.startTime, region.endTime);
+        m_waveform->setZoom(m_waveform->getZoom() * 1.0); // force rezoom on next paint
+        // Zoom to region width
+        double duration = region.endTime - region.startTime;
+        double visibleDuration = m_waveform->getVisibleDuration();
+        double regionWidthProportion = duration / m_fileManager->getDurationSec();
+        m_waveform->setHorizontalOffset(region.startTime / m_fileManager->getDurationSec() * getWidth());
+        // Adjust zoom to show about 2x the region width
+        m_waveform->setZoom(m_waveform->getZoom() * (visibleDuration / (duration * 2.0)));
+        m_waveform->repaint();
+        m_selectionOverlay->repaint();
+        m_markerOverlay->repaint();
+    };
 
     m_commandManager   = std::make_unique<juce::ApplicationCommandManager>();
 
@@ -46,6 +62,7 @@ MainComponent::MainComponent()
     addAndMakeVisible(*m_waveform);
     addAndMakeVisible(*m_selectionOverlay);
     addAndMakeVisible(*m_spectrogram);
+    addAndMakeVisible(*m_regionOverlay);
     addAndMakeVisible(*m_markerOverlay);
     addAndMakeVisible(*m_transport);
     m_spectrogram->setVisible(false); // start with waveform view
@@ -74,6 +91,9 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdRemoveMarker, juce::KeyPress('m', juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdNextMarker, juce::KeyPress(']', 0, 0));
         mappings->addKeyPress(cmdPrevMarker, juce::KeyPress('[', 0, 0));
+        mappings->addKeyPress(cmdAddRegion, juce::KeyPress('r', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
+        mappings->addKeyPress(cmdNextRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier, 0));
+        mappings->addKeyPress(cmdPrevRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -146,10 +166,14 @@ void MainComponent::resized()
     auto transportR = r.removeFromBottom(36);
     m_transport->setBounds(transportR);
 
+    auto regionBarR = r.removeFromTop(22);
+    m_regionOverlay->setBounds(regionBarR);
+
     m_waveform->setBounds(r);
     m_selectionOverlay->setBounds(r);
     m_spectrogram->setBounds(r);
     m_markerOverlay->setBounds(r);
+    m_regionOverlay->setBounds(regionBarR); // setAlwaysOnTop already set
 }
 
 // ── Menu ──
@@ -196,6 +220,11 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addCommandItem(m_commandManager.get(), cmdNormalize);
         menu.addCommandItem(m_commandManager.get(), cmdFadeIn);
         menu.addCommandItem(m_commandManager.get(), cmdFadeOut);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdAddRegion);
+        menu.addCommandItem(m_commandManager.get(), cmdRemoveRegion);
+        menu.addCommandItem(m_commandManager.get(), cmdNextRegion);
+        menu.addCommandItem(m_commandManager.get(), cmdPrevRegion);
     }
     else if (idx == 2)
     {
@@ -203,6 +232,15 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdZoomIn);
         menu.addCommandItem(m_commandManager.get(), cmdZoomOut);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdAddMarker);
+        menu.addCommandItem(m_commandManager.get(), cmdRemoveMarker);
+        menu.addCommandItem(m_commandManager.get(), cmdNextMarker);
+        menu.addCommandItem(m_commandManager.get(), cmdPrevMarker);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdAddRegion);
+        menu.addCommandItem(m_commandManager.get(), cmdNextRegion);
+        menu.addCommandItem(m_commandManager.get(), cmdPrevRegion);
     }
     return menu;
 }
@@ -218,7 +256,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
     cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
                      cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence,
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
-                     cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker });
+                     cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
+                     cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -292,6 +331,21 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdPrevMarker:
         info.setInfo("Previous Marker ([)", "Jump to previous marker", "Markers", 0);
         info.addDefaultKeypress('[', 0);
+        break;
+    case cmdAddRegion:
+        info.setInfo("Add Region (Ctrl+Shift+R)", "Add region from current selection", "Regions", 0);
+        info.addDefaultKeypress('r', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
+        break;
+    case cmdRemoveRegion:
+        info.setInfo("Remove Current Region", "Remove the currently selected region", "Regions", 0);
+        break;
+    case cmdNextRegion:
+        info.setInfo("Next Region (Ctrl+Tab)", "Switch to next region", "Regions", 0);
+        info.addDefaultKeypress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdPrevRegion:
+        info.setInfo("Previous Region (Ctrl+Shift+Tab)", "Switch to previous region", "Regions", 0);
+        info.addDefaultKeypress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
         break;
     default: break;
     }
@@ -396,6 +450,53 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
     case cmdToggleView:
         setViewMode(m_viewMode == WaveformView ? SpectrogramView : WaveformView);
         return true;
+    case cmdAddRegion:
+        addRegionFromSelection();
+        return true;
+    case cmdRemoveRegion: {
+        int curId = m_regionManager->getCurrentRegionId();
+        if (curId >= 0) {
+            m_regionManager->removeRegion(curId);
+            m_regionOverlay->repaint();
+        }
+        return true;
+    }
+    case cmdNextRegion: {
+        if (m_regionManager->getNumRegions() == 0) return true;
+        int curId = m_regionManager->getCurrentRegionId();
+        int nextId = m_regionManager->getNextRegion(curId);
+        if (nextId < 0 && m_regionManager->getNumRegions() > 0)
+            nextId = m_regionManager->getRegions().front().id;
+        if (nextId >= 0) {
+            const auto* r = m_regionManager->getRegionById(nextId);
+            if (r) {
+                m_regionManager->setCurrentRegionId(nextId);
+                m_selection->setSelection(r->startTime, r->endTime);
+                m_waveform->repaint();
+                m_selectionOverlay->repaint();
+                m_regionOverlay->repaint();
+            }
+        }
+        return true;
+    }
+    case cmdPrevRegion: {
+        if (m_regionManager->getNumRegions() == 0) return true;
+        int curId = m_regionManager->getCurrentRegionId();
+        int prevId = m_regionManager->getPrevRegion(curId);
+        if (prevId < 0 && m_regionManager->getNumRegions() > 0)
+            prevId = m_regionManager->getRegions().back().id;
+        if (prevId >= 0) {
+            const auto* r = m_regionManager->getRegionById(prevId);
+            if (r) {
+                m_regionManager->setCurrentRegionId(prevId);
+                m_selection->setSelection(r->startTime, r->endTime);
+                m_waveform->repaint();
+                m_selectionOverlay->repaint();
+                m_regionOverlay->repaint();
+            }
+        }
+        return true;
+    }
     default:
         return false;
     }
@@ -430,6 +531,24 @@ void MainComponent::filesDropped(const juce::StringArray& files, int, int)
 void MainComponent::changeListenerCallback(juce::ChangeBroadcaster*)
 {
     m_waveform->repaint();
+}
+
+void MainComponent::addRegionFromSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    double startSec = m_selection->getSelectionStart();
+    double endSec   = m_selection->getSelectionEnd();
+
+    int id = m_regionManager->addRegion({}, startSec, endSec);
+    if (id >= 0)
+    {
+        m_regionManager->setCurrentRegionId(id);
+        m_regionOverlay->repaint();
+        m_waveform->repaint();
+        m_selectionOverlay->repaint();
+    }
 }
 
 void MainComponent::silenceSelection()
