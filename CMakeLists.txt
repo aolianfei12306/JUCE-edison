@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(OpenEdison VERSION 0.1.0 LANGUAGES CXX)
+project(OpenEdison VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,50 +14,35 @@ FetchContent_Declare(
 )
 FetchContent_GetProperties(JUCE)
 if(NOT juce_POPULATED)
-  set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
-  set(JUCE_BUILD_SHARED_LIBRARY ON CACHE BOOL "" FORCE)
   FetchContent_Populate(JUCE)
   add_subdirectory(${juce_SOURCE_DIR} ${juce_BINARY_DIR})
 endif()
 
-# ── OpenEdison executable ──
-file(GLOB_RECURSE SOURCES Source/*.cpp Source/*.h)
+# ── OpenEdison executable (manual add_executable to avoid juce_add_* cmake bugs) ──
+add_executable(OpenEdison)
 
-juce_add_standalone_plugin(OpenEdison
-  COMPANY_NAME     "OpenEdison"
-  PLUGIN_NAME      "Open Edison"
-  PLUGIN_MANUFACTURER_CODE "OEdi"
-  PLUGIN_CODE      "OEd1"
-  DESCRIPTION      "Lightweight waveform editor"
-  VERSION          "0.1.0"
-  IS_SYNTH         FALSE
-  IS_MIDI_EFFECT   FALSE
-  NEEDS_MIDI_INPUT FALSE
-  NEEDS_MIDI_OUTPUT FALSE
-  COPY_PLUGIN_AFTER_BUILD TRUE
-)
-
+file(GLOB_RECURSE SOURCES Source/*.cpp)
 target_sources(OpenEdison PRIVATE ${SOURCES})
 
+target_include_directories(OpenEdison PRIVATE ${juce_SOURCE_DIR}/modules)
+
 target_compile_definitions(OpenEdison PRIVATE
+  JUCE_STANDALONE_APPLICATION=1
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0
 )
 
-# Link JUCE modules
-juce_generate_juce_header(OpenEdison)
 target_link_libraries(OpenEdison PRIVATE
-  juce::juce_audio_basics
-  juce::juce_audio_devices
-  juce::juce_audio_formats
-  juce::juce_audio_processors
-  juce::juce_audio_utils
   juce::juce_core
-  juce::juce_data_structures
-  juce::juce_events
   juce::juce_graphics
   juce::juce_gui_basics
   juce::juce_gui_extra
+  juce::juce_events
+  juce::juce_data_structures
+  juce::juce_audio_basics
+  juce::juce_audio_devices
+  juce::juce_audio_formats
+  juce::juce_audio_utils
 )
 
 # Linux flags
