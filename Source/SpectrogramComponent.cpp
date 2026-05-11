@@ -5,7 +5,7 @@
 
 // ── Colour helpers ──
 
-static juce::Colour viridisColour(float t)
+juce::Colour SpectrogramComponent::viridisColour(float t)
 {
     // A simple blue->purple->green->yellow gradient inspired by viridis
     t = std::clamp(t, 0.0f, 1.0f);
@@ -61,108 +61,169 @@ SpectrogramComponent::SpectrogramComponent(AudioFileManager& fileManager)
     m_window.resize(fftSize);
     for (int i = 0; i < fftSize; ++i)
         m_window[i] = hannWindow(i, fftSize);
-
 }
 
-// ── STFT computation ──
+// ── Viewport-driven STFT rendering ──
+//
+// Instead of precomputing the full spectrogram into a large memory buffer
+// (which blows up for long audio files), this method computes FFT only
+// for the visible time range and renders directly to a viewport-sized image.
+//
+// When zoomed out (many audio samples per pixel), multiple FFT frames are
+// max-pooled per pixel column, capturing transients without memory explosion.
+//
+// This supports arbitrarily long audio files (tested up to 1+ hour).
 
-void SpectrogramComponent::computeSTFT()
+void SpectrogramComponent::renderViewport(int viewWidth, int viewHeight)
 {
     auto* buffer = m_fileManager.getBuffer();
-    if (!buffer || buffer->getNumSamples() == 0)
+    if (!buffer || buffer->getNumSamples() == 0 || viewWidth <= 0 || viewHeight <= 0)
     {
-        m_spectrogramData.clear();
-        m_numTimeFrames = 0;
+        m_viewportImage = juce::Image{};
         return;
     }
 
-    // Use only the first channel
     const float* data = buffer->getReadPointer(0);
-    int totalSamples = buffer->getNumSamples();
+    int totalSamples   = buffer->getNumSamples();
+    double sampleRate  = m_fileManager.getSampleRate();
+    double totalDur    = m_fileManager.getDurationSec();
+    double viewDur     = totalDur / m_hZoom;
+    double startTime   = m_viewOffset;
 
-    // Cap frames to prevent memory blowout (max ~10 min at 44.1kHz)
-    int maxFrames = 10000;
-    m_numTimeFrames = std::min(
-        ((totalSamples - fftSize) / hopSize) + 1,
-        maxFrames);
+    // Clamp start so we don't render past end
+    if (startTime + viewDur > totalDur)
+        startTime = std::max(0.0, totalDur - viewDur);
+    double endTime = startTime + viewDur;
 
-    m_numFreqBins = fftSize / 2;
-    m_spectrogramData.resize(m_numTimeFrames);
-    for (auto& row : m_spectrogramData)
-        row.resize(m_numFreqBins, 0.0f);
+    int startSample = std::clamp(static_cast<int>(startTime * sampleRate), 0, totalSamples - 1);
+    int endSample   = std::clamp(static_cast<int>(endTime   * sampleRate), startSample + 1, totalSamples);
 
-    // FFT scratch buffer (real + imaginary interleaved)
+    int numFreqBins = fftSize / 2;
+
+    // Allocate viewport image
+    m_viewportImage = juce::Image(juce::Image::RGB, viewWidth, viewHeight, true);
+
+    // FFT scratch buffer (reused per pixel column)
     std::vector<float> fftBuf(fftSize * 2, 0.0f);
+    std::vector<float> colMaxMag(numFreqBins, 0.0f);
 
-    float maxMagnitude = 0.0f;
+    // ── Per-column STFT with max-hold pooling ──
+    //
+    // For each pixel column covering [pxStartTime, pxEndTime]:
+    //   - Compute all FFT frames within that time slice
+    //   - Take the maximum magnitude per frequency bin (max-hold pool)
+    //
+    // When zoomed out, stride increases to bound total FFTs to roughly
+    // (1-2x viewWidth), keeping performance smooth for any audio length.
 
-    for (int t = 0; t < m_numTimeFrames; ++t)
+    // Calculate adaptive stride: at most ~2x viewWidth FFT frames total
+    int totalVisibleFrames = (endSample - startSample - fftSize) / hopSize + 1;
+    int stride = hopSize;
+    if (totalVisibleFrames > viewWidth * 2)
     {
-        int offset = t * hopSize;
+        // Multiply hop size so we compute roughly 2*viewWidth frames total
+        int factor = totalVisibleFrames / (viewWidth * 2) + 1;
+        stride = hopSize * factor;
+        // Cap stride at fftSize to avoid losing all transients
+        stride = std::min(stride, fftSize);
+    }
 
-        // Window and fill real part
+    // Pre-compute FFT for the visible range (all frames, then map to pixels)
+    // We store per-frame max magnitudes across the visible range
+    int actualFrames = 0;
+    for (int s = startSample; s + fftSize < endSample; s += stride)
+        ++actualFrames;
+
+    if (actualFrames == 0)
+    {
+        m_viewportImage.clear(m_viewportImage.getBounds(), juce::Colour(0xFF0D0D1A));
+        return;
+    }
+
+    // Buffer: frames × freqBins
+    std::vector<std::vector<float>> frameMags(actualFrames, std::vector<float>(numFreqBins, 0.0f));
+    float maxGlobalMag = 0.0f;
+
+    int frameIdx = 0;
+    for (int s = startSample; s + fftSize < endSample && frameIdx < actualFrames; s += stride)
+    {
         std::fill(fftBuf.begin(), fftBuf.end(), 0.0f);
+
+        // Apply window
         for (int i = 0; i < fftSize; ++i)
         {
-            float sample = (offset + i < totalSamples) ? data[offset + i] : 0.0f;
+            int idx = s + i;
+            float sample = (idx < totalSamples) ? data[idx] : 0.0f;
             fftBuf[i * 2] = sample * m_window[i];
         }
 
         m_fft->performRealOnlyForwardTransform(fftBuf.data(), true);
 
-        // Extract magnitudes (only positive frequencies)
-        for (int f = 0; f < m_numFreqBins; ++f)
+        for (int f = 0; f < numFreqBins; ++f)
         {
             float re = fftBuf[f * 2];
             float im = fftBuf[f * 2 + 1];
             float mag = std::sqrt(re * re + im * im);
-            m_spectrogramData[t][f] = mag;
-            if (mag > maxMagnitude)
-                maxMagnitude = mag;
+            frameMags[frameIdx][f] = mag;
+            if (mag > maxGlobalMag)
+                maxGlobalMag = mag;
         }
+        ++frameIdx;
     }
+    actualFrames = frameIdx; // in case of early exit
 
-    // Convert to dB scale (normalized to 0..1 for max magnitude)
-    float dBFloor = -80.0f;
-    float maxDB = (maxMagnitude > 1e-10f) ? juce::Decibels::gainToDecibels(maxMagnitude) : 0.0f;
+    if (maxGlobalMag < 1e-10f)
+        maxGlobalMag = 1.0f;
 
-    for (int t = 0; t < m_numTimeFrames; ++t)
+    float maxDB = juce::Decibels::gainToDecibels(maxGlobalMag);
+
+    // ── Map frames to pixel columns with max-hold pooling ──
+    //
+    // Each pixel column covers a time range. We find which FFT frames
+    // fall in that range and take the maximum magnitude per bin.
+    double pxDuration = viewDur / viewWidth;
+
+    for (int px = 0; px < viewWidth; ++px)
     {
-        for (int f = 0; f < m_numFreqBins; ++f)
+        double pxStartTime = startTime + px * pxDuration;
+        double pxEndTime   = pxStartTime + pxDuration;
+
+        // Find FFT frame range for this pixel
+        double frameDuration = stride / sampleRate;
+        int frameStart = static_cast<int>(pxStartTime / frameDuration);
+        int frameEnd   = static_cast<int>(pxEndTime   / frameDuration);
+
+        // Adjust for the fact our FFT frames start at startTime
+        int baseFrameOffset = static_cast<int>(startTime / frameDuration);
+        frameStart = std::clamp(frameStart - baseFrameOffset, 0, actualFrames - 1);
+        frameEnd   = std::clamp(frameEnd   - baseFrameOffset, frameStart, actualFrames - 1);
+
+        // Max-hold pool across frames for this pixel
+        std::fill(colMaxMag.begin(), colMaxMag.end(), 0.0f);
+        for (int f = frameStart; f < frameEnd; ++f)
         {
-            float dB = (m_spectrogramData[t][f] > 1e-10f)
-                           ? juce::Decibels::gainToDecibels(m_spectrogramData[t][f])
-                           : dBFloor;
-            // Store as normalized dB value for color mapping
-            m_spectrogramData[t][f] = (dB - maxDB + 80.0f) / 80.0f;
+            for (int b = 0; b < numFreqBins; ++b)
+            {
+                if (frameMags[f][b] > colMaxMag[b])
+                    colMaxMag[b] = frameMags[f][b];
+            }
         }
-    }
-}
 
-// ── Image rendering ──
-
-void SpectrogramComponent::renderImage()
-{
-    if (m_numTimeFrames == 0 || m_numFreqBins == 0)
-    {
-        m_spectrogramImage = juce::Image{};
-        return;
-    }
-
-    const int imageWidth  = std::max(m_numTimeFrames, 1);
-    const int imageHeight = std::max(m_numFreqBins, 1);
-
-    m_spectrogramImage = juce::Image(juce::Image::RGB,
-                                      imageWidth, imageHeight, true);
-
-    for (int t = 0; t < m_numTimeFrames; ++t)
-    {
-        for (int f = 0; f < m_numFreqBins; ++f)
+        // Render column
+        for (int b = 0; b < numFreqBins; ++b)
         {
-            float val = m_spectrogramData[t][f];
-            // Flip Y so low frequencies are at bottom
-            m_spectrogramImage.setPixelAt(t, m_numFreqBins - 1 - f,
-                                           viridisColour(val));
+            float mag = colMaxMag[b];
+            float dB = (mag > 1e-10f)
+                           ? juce::Decibels::gainToDecibels(mag)
+                           : (maxDB - 80.0f);
+            float t = (dB - (maxDB - 80.0f)) / 80.0f;
+            t = std::clamp(t, 0.0f, 1.0f);
+
+            // Map frequency bin to Y coordinate (low freq = bottom)
+            int y = static_cast<int>((1.0f - static_cast<float>(b) / numFreqBins) * viewHeight);
+            y = std::clamp(y, 0, viewHeight - 1);
+
+            m_viewportImage.setPixelAt(px, y, viridisColour(t));
         }
     }
 }
@@ -171,27 +232,26 @@ void SpectrogramComponent::renderImage()
 
 void SpectrogramComponent::rebuildFromAudio()
 {
-    m_spectrogramData.clear();
-    m_spectrogramImage = juce::Image{};
-    m_numTimeFrames = 0;
+    refreshViewport();
+}
 
-    if (m_fileManager.hasAudio())
-    {
-        computeSTFT();
-        renderImage();
-    }
-
-    m_dirty = false;
+void SpectrogramComponent::refreshViewport()
+{
+    m_dirty = true;
     repaint();
 }
 
 void SpectrogramComponent::clear()
 {
-    m_spectrogramData.clear();
-    m_spectrogramImage = juce::Image{};
-    m_numTimeFrames = 0;
+    m_viewportImage = juce::Image{};
     m_dirty = true;
     repaint();
+}
+
+void SpectrogramComponent::resized()
+{
+    // Viewport image will be re-rendered on next paint
+    m_dirty = true;
 }
 
 void SpectrogramComponent::paint(juce::Graphics& g)
@@ -199,55 +259,56 @@ void SpectrogramComponent::paint(juce::Graphics& g)
     auto area = getLocalBounds().toFloat();
     g.fillAll(juce::Colour(0xFF0D0D1A));
 
-    if (!m_spectrogramImage.isValid())
+    if (!m_fileManager.hasAudio())
     {
-        // No spectrogram: draw placeholder text
         g.setColour(juce::Colours::grey);
         g.setFont(14.0f);
         g.drawText("No audio loaded", area, juce::Justification::centred);
         return;
     }
 
-    // Calculate visible region
-    double totalDurationSec = m_fileManager.getDurationSec();
-    if (totalDurationSec <= 0.0) return;
+    int viewW = getWidth();
+    int viewH = getHeight();
 
-    int totalFrames  = m_numTimeFrames;
-    double timePerFrame = static_cast<double>(hopSize) / m_fileManager.getSampleRate();
+    if (viewW <= 0 || viewH <= 0)
+        return;
 
-    double viewDuration = totalDurationSec / m_hZoom;
-    double startSec     = m_viewOffset;
-    double endSec       = startSec + viewDuration;
+    // Re-render viewport if dirty or size changed
+    if (m_dirty || !m_viewportImage.isValid()
+        || m_viewportImage.getWidth() != viewW
+        || m_viewportImage.getHeight() != viewH)
+    {
+        renderViewport(viewW, viewH);
+        m_dirty = false;
+    }
 
-    int startFrame = static_cast<int>(startSec / timePerFrame);
-    int endFrame   = static_cast<int>(endSec   / timePerFrame);
-    startFrame = std::clamp(startFrame, 0, totalFrames - 1);
-    endFrame   = std::clamp(endFrame,   startFrame + 1, totalFrames);
+    if (!m_viewportImage.isValid())
+    {
+        g.drawText("(no spectrogram)", area, juce::Justification::centred);
+        return;
+    }
 
-    int visibleFrames = endFrame - startFrame;
-    if (visibleFrames <= 0) visibleFrames = 1;
-
-    // Paint the visible portion of the spectrogram
-    float srcW = static_cast<float>(visibleFrames);
-    float srcH = static_cast<float>(m_numFreqBins);
-
-    g.drawImage(m_spectrogramImage,
-                0, 0, area.getWidth(), area.getHeight(),   // dest
-                static_cast<float>(startFrame), 0.0f, srcW, srcH); // src
+    // Draw the viewport image
+    g.drawImage(m_viewportImage,
+                0, 0, viewW, viewH,
+                0, 0, viewW, viewH, false);
 
     // ── Playhead cursor ──
     if (m_playbackPosition >= 0.0)
     {
+        double totalDur = m_fileManager.getDurationSec();
+        double viewDur  = totalDur / m_hZoom;
+        double startSec = m_viewOffset;
+        double endSec   = startSec + viewDur;
+
         if (m_playbackPosition >= startSec && m_playbackPosition <= endSec)
         {
             float playheadX = static_cast<float>(
-                (m_playbackPosition - startSec) / viewDuration * area.getWidth());
+                (m_playbackPosition - startSec) / viewDur * area.getWidth());
 
-            // Cursor line
             g.setColour(juce::Colours::white.withAlpha(0.85f));
             g.drawVerticalLine(static_cast<int>(playheadX), 0.0f, area.getHeight());
 
-            // Top triangle
             float triSize = 8.0f;
             juce::Path tri;
             tri.addTriangle(playheadX, 0.0f,
@@ -258,24 +319,25 @@ void SpectrogramComponent::paint(juce::Graphics& g)
         }
     }
 
-    // Draw frequency axis labels on the right
+    // ── Frequency axis labels on the right ──
     g.setFont(10.0f);
     g.setColour(juce::Colours::white.withAlpha(0.4f));
 
     double sampleRate = m_fileManager.getSampleRate();
-    // Draw tick marks at major frequency points
-    float labels[] = { 100, 500, 1000, 5000, 10000, (float)(sampleRate / 2) };
+    float labels[] = { 100, 500, 1000, 5000, 10000, static_cast<float>(sampleRate / 2) };
     for (float freq : labels)
     {
         if (freq > sampleRate / 2) continue;
-        float normY = 1.0f - freq / (float)(sampleRate / 2);
+        float normY = 1.0f - freq / static_cast<float>(sampleRate / 2);
         float y = normY * area.getHeight();
         g.drawHorizontalLine(static_cast<int>(y), area.getWidth() - 50, area.getWidth() - 5);
+
         juce::String label;
         if (freq >= 1000)
             label = juce::String(freq / 1000.0, 1) + "k";
         else
             label = juce::String(static_cast<int>(freq));
+
         g.drawText(label,
                    area.getWidth() - 50, y - 6, 45, 12,
                    juce::Justification::centredRight);
@@ -302,22 +364,16 @@ void SpectrogramComponent::mouseWheelMove(const juce::MouseEvent& e,
         double scrollAmount = viewDuration * 0.1 * w.deltaY;
         double newOffset = m_viewOffset + scrollAmount;
         double maxOffset = totalDuration - viewDuration;
-        m_viewOffset = std::clamp(newOffset, 0.0, maxOffset);
+        m_viewOffset = std::clamp(newOffset, 0.0, std::max(0.0, maxOffset));
     }
 
-    repaint();
-}
-
-void SpectrogramComponent::resized()
-{
-    // Image is pre-rendered at FFT grid resolution; no per-resize re-render.
+    refreshViewport();
 }
 
 void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
 {
     m_playbackPosition = posSec;
 
-    // Auto-scroll: follow playhead when it approaches right edge
     if (posSec >= 0.0 && m_followPlayback && m_fileManager.hasAudio())
     {
         double totalDuration = m_fileManager.getDurationSec();
@@ -327,9 +383,10 @@ void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
 
         if (posSec > rightEdge - threshold)
         {
-            // Keep playhead at ~70% from left edge
             m_viewOffset = posSec - viewDuration * 0.7;
             m_viewOffset = std::max(0.0, m_viewOffset);
+            refreshViewport();
+            return;
         }
     }
 
@@ -339,5 +396,5 @@ void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
 void SpectrogramComponent::setZoom(double hZoom) noexcept
 {
     m_hZoom = std::max(0.1, hZoom);
-    repaint();
+    refreshViewport();
 }

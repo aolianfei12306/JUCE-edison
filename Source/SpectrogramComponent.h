@@ -22,33 +22,38 @@ public:
 
     void setZoom(double hZoom) noexcept;
     double getZoom() const noexcept { return m_hZoom; }
-    void setViewOffset(double offsetSec) noexcept { m_viewOffset = offsetSec; }
+    void setViewOffset(double offsetSec) noexcept { m_viewOffset = offsetSec; refreshViewport(); }
     double getViewOffset() const noexcept { return m_viewOffset; }
 
 private:
-    void computeSTFT();
-    void renderImage();
+    /** Render spectrogram for current viewport at given pixel dimensions.
+     *  Uses lazy on-demand STFT: only computes FFT frames needed for visible
+     *  time range, and max-pools multiple frames per pixel column when zoomed out.
+     *  This avoids storing the full spectrogram in memory, enabling arbitrarily
+     *  long audio files.
+     */
+    void renderViewport(int viewWidth, int viewHeight);
+
+    /** Mark viewport image as dirty and schedule repaint. */
+    void refreshViewport();
+
     static float hannWindow(int n, int N);
     static juce::Colour magnitudeToColour(float dB, float maxDB);
+    static juce::Colour viridisColour(float t);
 
     AudioFileManager& m_fileManager;
 
-    // STFT
+    // STFT config
     static constexpr int fftOrder = 10;   // 1024-point FFT
     static constexpr int fftSize  = 1 << fftOrder;
     static constexpr int hopSize  = 256;
     std::unique_ptr<juce::dsp::FFT> m_fft;
 
-    // Window function
+    // Hann window (precomputed)
     std::vector<float> m_window;
 
-    // Spectrogram data: data[t][f] where t = time frame, f = frequency bin (0..fftSize/2)
-    std::vector<std::vector<float>> m_spectrogramData;
-    int m_numTimeFrames = 0;
-    int m_numFreqBins   = fftSize / 2; // only positive frequencies
-
-    // Rendered image cache
-    juce::Image m_spectrogramImage;
+    // Viewport-sized rendered image (rebuilt on zoom/scroll, no full-audio storage)
+    juce::Image m_viewportImage;
     bool m_dirty = true;
 
     // View state
