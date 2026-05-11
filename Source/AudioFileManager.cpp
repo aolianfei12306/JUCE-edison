@@ -25,6 +25,8 @@ bool AudioFileManager::loadFile(const juce::File& file)
     auto totalSamples = static_cast<int>(reader->lengthInSamples);
     auto numChannels  = static_cast<int>(reader->numChannels);
 
+    m_bitsPerSample = reader->bitsPerSample;
+
     m_buffer = std::make_unique<juce::AudioBuffer<float>>(numChannels, totalSamples);
     reader->read(m_buffer.get(), 0, totalSamples, 0, true, true);
 

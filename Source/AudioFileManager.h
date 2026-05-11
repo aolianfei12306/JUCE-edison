@@ -17,8 +17,9 @@ public:
     }
 
     juce::AudioBuffer<float>* getBuffer() const noexcept { return m_buffer.get(); }
-    double  getSampleRate()  const noexcept { return m_sampleRate; }
-    int     getNumChannels() const noexcept
+    double  getSampleRate()    const noexcept { return m_sampleRate; }
+    int     getBitsPerSample() const noexcept { return m_bitsPerSample; }
+    int     getNumChannels()   const noexcept
     {
         return m_buffer ? m_buffer->getNumChannels() : 0;
     }
@@ -42,7 +43,8 @@ private:
     std::unique_ptr<juce::AudioBuffer<float>> m_buffer;
     std::unique_ptr<juce::AudioThumbnail>     m_thumbnail;
     std::unique_ptr<juce::AudioThumbnailCache> m_thumbnailCache;
-    double   m_sampleRate = 44100.0;
+    double   m_sampleRate     = 44100.0;
+    int      m_bitsPerSample  = 16;
     juce::String m_fileName;
     juce::File   m_file;
 };

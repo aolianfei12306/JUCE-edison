@@ -52,17 +52,31 @@ void TransportBar::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(0xFF222244));
 
-    auto r = getLocalBounds().removeFromRight(180);
+    auto r = getLocalBounds().removeFromRight(380);
     auto fmt = [](double sec) -> juce::String {
         int m = static_cast<int>(sec) / 60;
         double s = sec - m * 60;
         return juce::String::formatted("%02d:%06.3f", m, s);
     };
 
+    // Row 1: Time display
     double total = m_fileManager.hasAudio() ? m_fileManager.getDurationSec() : 0.0;
     g.setColour(juce::Colour(0xCCE0E0E0));
     g.setFont(12.0f);
-    g.drawText(fmt(m_position) + " / " + fmt(total), r, juce::Justification::centredLeft);
+    g.drawText(fmt(m_position) + " / " + fmt(total), r.removeFromTop(16), juce::Justification::centredLeft);
+
+    // Row 2: File info
+    if (m_fileManager.hasAudio()) {
+        juce::String info;
+        info += juce::String(m_fileManager.getSampleRate(), 0) + " Hz";
+        info += " / " + juce::String(m_fileManager.getBitsPerSample()) + "-bit";
+        info += " / " + juce::String(m_fileManager.getNumChannels()) + "ch";
+        info += " / " + m_fileManager.getFileName();
+
+        g.setColour(juce::Colour(0x99A0A0B0));
+        g.setFont(10.0f);
+        g.drawText(info, r, juce::Justification::centredLeft);
+    }
 }
 
 void TransportBar::updateButtonStates()
