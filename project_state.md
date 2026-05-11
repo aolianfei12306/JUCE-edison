@@ -66,6 +66,9 @@
 - [x] 选区操作交叉淡化（Crossfade on Selection Editing）
 - [x] 吸附网格（Snap-to-Grid：节拍/拍子对齐）
 
+### P4 — 信息显示增强 ✅
+- [x] 文件信息显示（TransportBar 显示采样率/位深度/声道数/文件名）
+
 ## 已知 Bug
 
 （暂无）
