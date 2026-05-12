@@ -46,9 +46,42 @@ target_link_libraries(OpenEdison PRIVATE
   juce::juce_dsp
 )
 
+# ── Test target ──
+file(GLOB_RECURSE TEST_SOURCES Source/tests/*.cpp)
+# Also link source files needed by tests (non-GUI only)
+set(TEST_DEPS_SOURCE
+  Source/AudioFileManager.cpp
+  Source/RegionManager.cpp
+)
+add_executable(OpenEdison_Tests ${TEST_SOURCES} ${TEST_DEPS_SOURCE})
+
+target_include_directories(OpenEdison_Tests PRIVATE ${juce_SOURCE_DIR}/modules)
+
+target_compile_definitions(OpenEdison_Tests PRIVATE
+  JUCE_STANDALONE_APPLICATION=1
+  JUCE_WEB_BROWSER=0
+  JUCE_USE_CURL=0
+  JUCE_UNIT_TESTS=1
+)
+
+target_link_libraries(OpenEdison_Tests PRIVATE
+  juce::juce_core
+  juce::juce_graphics
+  juce::juce_events
+  juce::juce_audio_basics
+  juce::juce_audio_formats
+  juce::juce_audio_utils
+  juce::juce_data_structures
+  juce::juce_gui_basics
+  juce::juce_gui_extra
+)
+
 # Linux flags
 if(UNIX AND NOT APPLE)
   target_link_options(OpenEdison PRIVATE
+    "-Wl,--no-undefined"
+  )
+  target_link_options(OpenEdison_Tests PRIVATE
     "-Wl,--no-undefined"
   )
 endif()
