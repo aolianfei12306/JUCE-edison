@@ -20,11 +20,16 @@ endif()
 
 # ── OpenEdison executable (manual add_executable to avoid juce_add_* cmake bugs) ──
 add_executable(OpenEdison)
+set_target_properties(OpenEdison PROPERTIES WIN32_EXECUTABLE TRUE)
 
 file(GLOB_RECURSE SOURCES Source/*.cpp)
 target_sources(OpenEdison PRIVATE ${SOURCES})
 
 target_include_directories(OpenEdison PRIVATE ${juce_SOURCE_DIR}/modules)
+
+if(MSVC)
+  target_compile_options(OpenEdison PRIVATE /utf-8)
+endif()
 
 target_compile_definitions(OpenEdison PRIVATE
   JUCE_STANDALONE_APPLICATION=1

@@ -75,41 +75,47 @@ cmake --build build -j$(nproc)
 ./build/OpenEdison
 ```
 
-### Windows（零手动浏览下载，只需运行一个命令）
+### Windows
 
-打开 **PowerShell（管理员）**，执行以下命令自动安装全部依赖：
+推荐使用 **Visual Studio 2022 / MSVC** 作为 Windows 开发工具链。JUCE 会由 CMake 通过 `FetchContent` 自动拉取，不需要单独安装 JUCE。
 
 ```powershell
-# 方式 A：使用 MSYS2（推荐，轻量）
-# 一行命令安装 GCC + CMake + Ninja + Git
-git clone https://github.com/aolianfei12306/JUCE-edison.git
-cd JUCE-edison
-.\setup.ps1
+# 安装基础工具
+winget install --id Git.Git -e
+winget install --id Kitware.CMake -e
+winget install --id Ninja-build.Ninja -e
 ```
 
-`setup.ps1` 会自动检测可用的包管理器并按优先级尝试：
-1. **winget**（Windows 10 1709+ / 11 内置）→ 安装 MSYS2 + MinGW-w64
-2. **Chocolatey** / **Scoop** → 一键安装 mingw + cmake
-3. 以上皆无 → 自动下载安装 Chocolatey，再用它装依赖
+通过 **Visual Studio Installer** 安装 **Visual Studio 2022** 或 **Build Tools for Visual Studio 2022**，勾选：
 
-**安装完成后**，打开 `MSYS2 MinGW64` 终端（如果用了 MSYS2）或随便一个终端：
+- **Desktop development with C++**
+- **MSVC v143**
+- **Windows 10/11 SDK**
+- **C++ CMake tools for Windows**（使用 Visual Studio 开发时建议安装）
 
-```bash
-cd JUCE-edison
+使用 Visual Studio 生成器构建：
 
-# MSYS2 用户：
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+```powershell
+git clone https://github.com/your-username/open-edison.git
+cd open-edison
 
-# Chocolatey/Scoop 用户：
-cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
 
-# 运行
-./build/OpenEdison
+.\build\Release\OpenEdison.exe
 ```
 
-> **注意**：不需要 Visual Studio，不需要手动打开任何网页下载任何文件。
+也可以在 **Developer PowerShell for VS 2022** 中使用 Ninja 构建，适合 VS Code / 命令行开发：
+
+```powershell
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+
+.\build\OpenEdison.exe
+```
+
+如果普通 PowerShell 提示找不到 `cl.exe`，请改用 **Developer PowerShell for VS 2022**，或先运行 VS 的开发环境初始化脚本。
+
 
 ---
 
