@@ -61,6 +61,11 @@ void MarkerOverlay::paint(juce::Graphics& g)
     }
 }
 
+bool MarkerOverlay::hitTest(int x, int y)
+{
+    return getMarkerAtPosition(x, y) >= 0;
+}
+
 void MarkerOverlay::mouseDown(const juce::MouseEvent& e)
 {
     int markerId = getMarkerAtPosition(e.x, e.y);

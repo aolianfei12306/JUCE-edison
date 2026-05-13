@@ -16,6 +16,7 @@ public:
     }
 
     void paint(juce::Graphics& g) override;
+    bool hitTest(int x, int y) override;
     void mouseDown(const juce::MouseEvent& e) override;
 
     void setPlaybackPosition(double pos) { m_playheadPos = pos; }
