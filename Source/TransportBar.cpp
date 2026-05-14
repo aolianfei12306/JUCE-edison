@@ -3,6 +3,83 @@
 #include "SelectionManager.h"
 #include "LoopManager.h"
 
+TransportIconButton::TransportIconButton(const juce::String& name, Icon icon)
+    : juce::Button(name), m_icon(icon)
+{
+    setWantsKeyboardFocus(false);
+    setTooltip(name);
+}
+
+void TransportIconButton::setIcon(Icon icon) noexcept
+{
+    if (m_icon == icon)
+        return;
+
+    m_icon = icon;
+    repaint();
+}
+
+void TransportIconButton::paintButton(juce::Graphics& g, bool isMouseOverButton, bool isButtonDown)
+{
+    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+    auto base = juce::Colour(0xFF303052);
+
+    if (isButtonDown)
+        base = base.brighter(0.20f);
+    else if (isMouseOverButton)
+        base = base.brighter(0.12f);
+
+    if (!isEnabled())
+        base = base.withMultipliedSaturation(0.35f).withMultipliedBrightness(0.7f);
+
+    g.setColour(base);
+    g.fillRoundedRectangle(bounds, 4.0f);
+
+    g.setColour(juce::Colour(0x663F8CFF));
+    g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+
+    auto iconArea = bounds.reduced(8.0f);
+    auto iconColour = (m_icon == Icon::Record)
+        ? juce::Colour(0xFFFF5656)
+        : juce::Colour(0xFFE8F0FF);
+
+    if (!isEnabled())
+        iconColour = iconColour.withAlpha(0.35f);
+
+    g.setColour(iconColour);
+
+    switch (m_icon)
+    {
+    case Icon::Play:
+    {
+        juce::Path play;
+        play.addTriangle(iconArea.getX() + 1.0f, iconArea.getY(),
+                         iconArea.getX() + 1.0f, iconArea.getBottom(),
+                         iconArea.getRight(), iconArea.getCentreY());
+        g.fillPath(play);
+        break;
+    }
+    case Icon::Pause:
+    {
+        const auto barWidth = juce::jmax(3.0f, iconArea.getWidth() * 0.28f);
+        g.fillRoundedRectangle(iconArea.withWidth(barWidth), 1.0f);
+        g.fillRoundedRectangle(iconArea.withX(iconArea.getRight() - barWidth).withWidth(barWidth), 1.0f);
+        break;
+    }
+    case Icon::Stop:
+    case Icon::RecordStop:
+    {
+        g.fillRoundedRectangle(iconArea.reduced(1.5f), 1.5f);
+        break;
+    }
+    case Icon::Record:
+    {
+        g.fillEllipse(iconArea.reduced(1.0f));
+        break;
+    }
+    }
+}
+
 TransportBar::TransportBar(AudioFileManager& fileManager, SelectionManager& selection)
     : m_fileManager(fileManager), m_selection(selection)
 {
@@ -84,7 +161,8 @@ void TransportBar::updateButtonStates()
     m_playBtn.setEnabled(m_fileManager.hasAudio());
     m_pauseBtn.setEnabled(m_state == State::Playing);
     m_stopBtn.setEnabled(m_state != State::Stopped);
-    m_recordBtn.setButtonText(isRecording() ? "⏹" : "⏺");
+    m_recordBtn.setIcon(isRecording() ? TransportIconButton::Icon::RecordStop
+                                      : TransportIconButton::Icon::Record);
 }
 
 void TransportBar::play()

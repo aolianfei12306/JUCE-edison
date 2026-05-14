@@ -7,6 +7,27 @@ class AudioFileManager;
 class SelectionManager;
 class LoopManager;
 
+class TransportIconButton : public juce::Button
+{
+public:
+    enum class Icon
+    {
+        Play,
+        Pause,
+        Stop,
+        Record,
+        RecordStop
+    };
+
+    TransportIconButton(const juce::String& name, Icon icon);
+
+    void setIcon(Icon icon) noexcept;
+    void paintButton(juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override;
+
+private:
+    Icon m_icon;
+};
+
 class TransportBar : public juce::Component,
                      public juce::AudioSource,
                      public juce::Timer
@@ -66,10 +87,10 @@ private:
     int    m_recordedChannels     = 0;
     juce::CriticalSection m_recordingLock;
 
-    juce::TextButton m_playBtn   { "▶" };
-    juce::TextButton m_pauseBtn  { "⏸" };
-    juce::TextButton m_stopBtn   { "■" };
-    juce::TextButton m_recordBtn { "⏺" };
+    TransportIconButton m_playBtn   { "Play", TransportIconButton::Icon::Play };
+    TransportIconButton m_pauseBtn  { "Pause", TransportIconButton::Icon::Pause };
+    TransportIconButton m_stopBtn   { "Stop", TransportIconButton::Icon::Stop };
+    TransportIconButton m_recordBtn { "Record", TransportIconButton::Icon::Record };
     juce::Slider     m_progress  { juce::Slider::LinearBar, juce::Slider::NoTextBox };
 
     void updateButtonStates();
