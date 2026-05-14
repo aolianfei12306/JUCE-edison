@@ -1084,6 +1084,8 @@ void MainComponent::loadAudioFile(const juce::File& file)
     m_transport->stop();
     m_selection->clearSelection();
     m_markerManager->clear();
+    m_regionManager->clear();
+    m_loopManager->clearLoop();
     m_undoManager.clearUndoHistory();
 
     if (m_fileManager->loadFile(file))

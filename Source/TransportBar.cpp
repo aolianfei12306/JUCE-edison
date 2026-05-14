@@ -129,7 +129,9 @@ void TransportBar::resized()
     m_recordBtn.setBounds(r.removeFromLeft(bw).reduced(2));
     r.removeFromLeft(4);
 
+    // Reserve 200px for selection info text (left of progress bar, after buttons)
     r.removeFromRight(juce::jmin(infoWidth, r.getWidth()));
+    auto selInfoArea = r.removeFromLeft(200);
     m_progress.setBounds(r);
 }
 
@@ -222,13 +224,14 @@ void TransportBar::paint(juce::Graphics& g)
         g.drawText(info, rightPanel, juce::Justification::centredLeft);
     }
 
-    // Middle area (between buttons right edge ~132px and right info panel): selection info + progress bar
+    // Selection info: draw directly in the dedicated 200px area between buttons and progress bar
     // Buttons occupy ~124px (4 × 30 + 4 gap + 2×2 inset padding)
     constexpr int buttonAreaEnd = 132;
-    auto middleArea = getLocalBounds().withTrimmedLeft(buttonAreaEnd)
-                                       .withTrimmedRight(rightPanel.getWidth() + 4);
-    if (middleArea.getWidth() > 0)
-        drawSelectionInfo(g, middleArea);
+    constexpr int selInfoWidth = 200;
+    auto selArea = getLocalBounds().withTrimmedLeft(buttonAreaEnd)
+                                    .withWidth(selInfoWidth);
+    if (selArea.getWidth() > 0)
+        drawSelectionInfo(g, selArea);
 }
 
 void TransportBar::updateButtonStates()

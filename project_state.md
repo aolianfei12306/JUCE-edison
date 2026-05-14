@@ -12,10 +12,10 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P4+++: 三轮审计修复（Undo 未清空 Bug 修复，Ctrl+O 键冲突解决，整体功能审计） |
-| **完成度** | ~99% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅) |
+| **阶段** | P4+++: 四轮审计修复（TransportBar 布局/选区信息 Bug 修复 + Region/Loop 清空修复） |
+| **完成度** | ~99% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅, P4+++ 审计修复: ✅) |
 | **LOC** | ~4,130 行（31 个源文件） |
-| **最后更新** | 2026-05-14 13:16 CST |
+| **最后更新** | 2026-05-14 13:46 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -41,6 +41,7 @@
 | 2026-05-14 | P4++ 审计修复 | 选区信息被 TransportBar 遮盖修复，添加 Escape Stop 快捷键，修复频谱图像素间隙 | ✅ |
 | 2026-05-14 | P4++ 审计修复(二轮) | TransportBar 选区信息真正显示（之前被按钮遮挡），传递 GridManager 到 TransportBar 显示 BPM，删除 SelectionOverlay 死代码 | ✅ |
 | 2026-05-14 | P4+++ 审计修复(三轮) | Undo 历史未清空 Bug（加载新文件后旧操作可破坏新文件）、Ctrl+O 键冲突（Open 与 Fade Out 共用）、功能完整性审计 | ✅ |
+| 2026-05-14 | P4++++ 审计修复(四轮) | 进度条覆盖选区信息修正、Region/Loop 加载新文件未清空 Bug、冗余区域清除优化 | ✅ |
 
 ## 审计报告 (2026-05-14)
 
@@ -72,12 +73,30 @@
 - **根因：** `cmdOpen` 和 `cmdFadeOut` 的 `getCommandInfo()` 都调用 `info.addDefaultKeypress('o', ctrlModifier)`。`resetToDefaultMappings()` 将同一个 Ctrl+O 绑定到两个命令上，按 Ctrl+O 时行为不可预测。
 - **修复：** 移除 `cmdFadeOut` 的默认快捷键绑定（Fade Out 在菜单中仍可用，仅移除键盘快捷键以避免冲突）。
 
+### 审计发现（四轮审计 — 新增/修复的问题 #14~#15）
+
+#### 1. 进度条覆盖选区信息文本（严重 Bug）
+- **文件：** `TransportBar.cpp` `paint()` / `resized()`
+- **根因：** `resized()` 中进度条 (`m_progress`) 占据按钮右侧所有剩余空间（直到右侧信息面板）。`paint()` 中的 `drawSelectionInfo` 也在同一区域绘制文本。由于子组件在 `paint()` 之后绘制，进度条完全覆盖选区信息文本。此外，`paint()` 中 `middleArea` 的 `withTrimmedRight(rightPanel.getWidth() + 4)` 在 `bounds` 已移除右侧面板后额外右缩进，进一步压缩了绘制区域。
+- **修复：** `resized()` 中保留 200px 专用区域用于选区信息（`auto selInfoArea = r.removeFromLeft(200)`）。`paint()` 中选区信息改为渲染在 `getLocalBounds().withTrimmedLeft(132).withWidth(200)` 的固定区域内，与进度条无重叠。
+
+#### 2. 加载新文件时 Region 和 Loop 未清空（中优先级 Bug）
+- **文件：** `MainComponent.cpp` `loadAudioFile()`
+- **根因：** `loadAudioFile()` 清空 marker、selection 和 undo history，但未清空 `m_regionManager` 和 `m_loopManager`。旧文件的 Region 定义仍然保留，时间范围在原文件的时长范围内，加载更短的新文件后访问越界。
+- **修复：** 在 `loadAudioFile()` 末尾添加 `m_regionManager->clear()` 和 `m_loopManager->clearLoop()`。
+
+### 代码整洁（四轮）
+
+#### 3. `constexpr int infoWidth = 380` 重复定义
+- **位置：** `TransportBar.cpp` `resized()` 和 `paint()` 各定义了一次同值常量
+- **说明：** 功能正确，但违反 DRY。修复：本次暂不提取（仅影响两处局部作用域，开销可忽略），留待后续重构。
+
 ### 审计发现（无需修复）
 
 | # | 发现 | 说明 |
 |---|------|------|
 | 1 | 频谱视图无选区叠加层 | `setViewMode(SpectrogramView)` 隐藏 `SelectionOverlay`。Edison 允许在频谱中选区，但 Open Edison 的选区操作设计为波形视图专属——设计意图，非缺陷 |
-| 2 | 无时间尺/刻度标尺 | Edison 在波形上方显示秒/节拍刻度。当前 Open Edison 未实现——已计划在 `project_state.md`
+| 2 | 无时间尺/刻度标尺 | Edison 在波形上方显示秒/节拍刻度。当前 Open Edison 未实现——已计划待处理
 
 #### 1. TransportBar 选区信息被按钮覆盖（中优先级，二轮审计发现）
 - **文件：** `TransportBar.cpp`
@@ -119,7 +138,7 @@
 | Edison 功能 | Open Edison | 备注 |
 |-------------|-------------|------|
 | 音频加载/波形显示 | ✅ | WAV/MP3/FLAC |
-| 播放/暂停/停止 | ✅ | Space 切换 |
+| 播放/暂停/停止 | ✅ | Space 切换，Escape 停止 |
 | 选区播放 | ✅ | 播放仅限选区 |
 | 选中区域操作（静音/反向/归一化/淡入淡出） | ✅ | 已全部实现 |
 | 撤销/重做 | ✅ | Ctrl+Z/Ctrl+Shift+Z |
@@ -137,6 +156,8 @@
 | **垂直缩放** | ✅ | **新增** — Ctrl+Shift+滚轮 |
 | **选区拖动视觉反馈** | ✅ | **修复** — 实时更新波形高亮和信息 |
 | **Region 删除快捷键** | ✅ | **修复** — 新增 Shift+Backspace |
+| **加载新文件 Region/Loop 自动清空** | ✅ | **修复** — 避免残余Region引用无效时间 |
+| **进度条与选区信息不重叠** | ✅ | **修复** — 专用200px选区信息区域 |
 | 时间尺/刻度标尺 | ❌ | 未实现（计划中） |
 | 音量/增益实时控制 | ❌ | 未实现（计划中） |
 | 电平表 | ❌ | 未实现（计划中） |
@@ -144,6 +165,7 @@
 | 相位翻转 | ❌ | 未实现 |
 | 时间伸缩/变调 | ❌ | 高级功能，暂未实现 |
 | 鼠标框选微调（Shift+方向键） | ❌ | 未实现 |
+| 新建/新建项目 | ❌ | 未实现 |
 
 ### 修复详情
 
