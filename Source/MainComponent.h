@@ -58,9 +58,12 @@ public:
 
     void setViewMode(ViewMode mode);
 
+    void saveAudioAs();
+
     enum CommandIDs
     {
         cmdOpen      = 0x1001,
+        cmdSaveAs    = 0x1001B,
         cmdPlayPause = 0x1002,
         cmdStop      = 0x1003,
         cmdPlaySel   = 0x1004,

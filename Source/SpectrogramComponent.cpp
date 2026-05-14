@@ -209,19 +209,21 @@ void SpectrogramComponent::renderViewport(int viewWidth, int viewHeight)
             }
         }
 
-        // Render column
-        for (int b = 0; b < numFreqBins; ++b)
+        // Render column — fill ALL pixel rows without gaps
+        // by iterating Ys and finding the nearest bin for each row
+        for (int y = 0; y < viewHeight; ++y)
         {
+            // Map Y to frequency bin (low freq = bottom of viewport)
+            float binFrac = 1.0f - static_cast<float>(y) / static_cast<float>(viewHeight);
+            int b = static_cast<int>(binFrac * numFreqBins);
+            b = std::clamp(b, 0, numFreqBins - 1);
+
             float mag = colMaxMag[b];
             float dB = (mag > 1e-10f)
                            ? juce::Decibels::gainToDecibels(mag)
                            : (maxDB - 80.0f);
             float t = (dB - (maxDB - 80.0f)) / 80.0f;
             t = std::clamp(t, 0.0f, 1.0f);
-
-            // Map frequency bin to Y coordinate (low freq = bottom)
-            int y = static_cast<int>((1.0f - static_cast<float>(b) / numFreqBins) * viewHeight);
-            y = std::clamp(y, 0, viewHeight - 1);
 
             m_viewportImage.setPixelAt(px, y, viridisColour(t));
         }

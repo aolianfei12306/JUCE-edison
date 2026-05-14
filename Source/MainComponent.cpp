@@ -73,6 +73,7 @@ MainComponent::MainComponent()
     m_deviceManager.initialiseWithDefaultDevices(2, 2);
     m_transport->setAudioDeviceManager(&m_deviceManager);
     m_transport->setLoopManager(m_loopManager.get());
+    m_transport->setGridManager(m_gridManager.get());
 
     addAndMakeVisible(*m_waveform);
     addAndMakeVisible(*m_spectrogram);
@@ -105,6 +106,7 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdToggleView, juce::KeyPress('s', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::deleteKey, 0, 0));
         mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::backspaceKey, 0, 0));
+        mappings->addKeyPress(cmdStop, juce::KeyPress(juce::KeyPress::escapeKey, 0, 0));
         mappings->addKeyPress(cmdCut, juce::KeyPress('x', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdCopy, juce::KeyPress('c', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdPaste, juce::KeyPress('v', juce::ModifierKeys::ctrlModifier, 0));
@@ -113,6 +115,7 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdNextMarker, juce::KeyPress(']', 0, 0));
         mappings->addKeyPress(cmdPrevMarker, juce::KeyPress('[', 0, 0));
         mappings->addKeyPress(cmdAddRegion, juce::KeyPress('r', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
+        mappings->addKeyPress(cmdRemoveRegion, juce::KeyPress(juce::KeyPress::backspaceKey, juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdNextRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdPrevRegion, juce::KeyPress(juce::KeyPress::tabKey, juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdZoomToSelection, juce::KeyPress('z', 0, 0));
@@ -162,9 +165,6 @@ MainComponent::~MainComponent() = default;
 void MainComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(0xFF1A1A2E));
-    // Draw selection info in transport bar area
-    auto r = getLocalBounds().removeFromBottom(36).removeFromLeft(250);
-    m_selectionOverlay->drawSelectionInfo(g, r);
 }
 
 void MainComponent::setViewMode(ViewMode mode)
@@ -218,6 +218,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
     if (idx == 0)
     {
         menu.addCommandItem(m_commandManager.get(), cmdOpen);
+        menu.addCommandItem(m_commandManager.get(), cmdSaveAs);
         menu.addSeparator();
         juce::PopupMenu inputMenu;
         auto* currentDevice = m_deviceManager.getCurrentAudioDevice();
@@ -292,7 +293,7 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() { return n
 
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
 {
-    cmds.addArray({ cmdOpen, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
+    cmds.addArray({ cmdOpen, cmdSaveAs, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
                      cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence,
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
@@ -310,12 +311,17 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.setInfo("Open...", "Open an audio file", "File", 0);
         info.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier);
         break;
+    case cmdSaveAs:
+        info.setInfo("Save As...", "Save the edited audio to a WAV file", "File", 0);
+        info.addDefaultKeypress('s', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
+        break;
     case cmdPlayPause:
         info.setInfo("Play / Pause", "Toggle playback", "Transport", 0);
         info.addDefaultKeypress(juce::KeyPress::spaceKey, 0);
         break;
     case cmdStop:
-        info.setInfo("Stop", "Stop playback", "Transport", 0);
+        info.setInfo("Stop (Esc)", "Stop playback and reset position", "Transport", 0);
+        info.addDefaultKeypress(juce::KeyPress::escapeKey, 0);
         break;
     case cmdPlaySel:
         info.setInfo("Play Selection", "Play selection only", "Transport", 0);
@@ -356,7 +362,6 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         break;
     case cmdFadeOut:
         info.setInfo("Fade Out Selection", "Fade out the selected audio", "Process", 0);
-        info.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier);
         break;
     case cmdAddMarker:
         info.setInfo("Add Marker (M)", "Add a marker at playhead position", "Markers", 0);
@@ -387,7 +392,8 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.addDefaultKeypress('r', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
         break;
     case cmdRemoveRegion:
-        info.setInfo("Remove Current Region", "Remove the currently selected region", "Regions", 0);
+        info.setInfo("Remove Current Region (Shift+Backspace)", "Remove the currently selected region", "Regions", 0);
+        info.addDefaultKeypress(juce::KeyPress::backspaceKey, juce::ModifierKeys::shiftModifier);
         break;
     case cmdNextRegion:
         info.setInfo("Next Region (Ctrl+Tab)", "Switch to next region", "Regions", 0);
@@ -442,6 +448,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
             });
         return true;
     }
+    case cmdSaveAs:
+        saveAudioAs();
+        return true;
     case cmdPlayPause:
         m_transport->isPlaying() ? m_transport->pause() : m_transport->play();
         return true;
@@ -1019,6 +1028,55 @@ void MainComponent::toggleGridSnap()
     repaint();
 }
 
+void MainComponent::saveAudioAs()
+{
+    if (!m_fileManager->hasAudio())
+        return;
+
+    auto* buffer = m_fileManager->getBuffer();
+    if (buffer == nullptr || buffer->getNumSamples() <= 0)
+        return;
+
+    auto chooser = std::make_shared<juce::FileChooser>(
+        "Save Audio As...",
+        m_fileManager->getFile().withFileExtension(".wav"),
+        "*.wav");
+
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, chooser](const juce::FileChooser& fc)
+        {
+            auto result = fc.getResult();
+            if (result == juce::File{})
+                return;
+
+            auto* buffer = m_fileManager->getBuffer();
+            if (buffer == nullptr)
+                return;
+
+            auto outFile = result.withFileExtension(".wav");
+
+            juce::WavAudioFormat wavFormat;
+            auto* writer = wavFormat.createWriterFor(
+                new juce::FileOutputStream(outFile),
+                m_fileManager->getSampleRate(),
+                buffer->getNumChannels(),
+                m_fileManager->getBitsPerSample(),
+                {}, 0);
+
+            if (writer == nullptr)
+                return;
+
+            writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples());
+            writer->flush();
+            juce::Thread::sleep(50); // let the OS flush the file
+            delete writer;
+
+            // Update title to reflect saved file
+            if (auto* peer = getPeer())
+                peer->setTitle("Open Edison - " + outFile.getFileName());
+        });
+}
+
 void MainComponent::loadAudioFile(const juce::File& file)
 {
     if (!file.existsAsFile()) return;
@@ -1026,6 +1084,7 @@ void MainComponent::loadAudioFile(const juce::File& file)
     m_transport->stop();
     m_selection->clearSelection();
     m_markerManager->clear();
+    m_undoManager.clearUndoHistory();
 
     if (m_fileManager->loadFile(file))
     {

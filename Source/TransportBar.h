@@ -6,6 +6,7 @@
 class AudioFileManager;
 class SelectionManager;
 class LoopManager;
+class GridManager;
 
 class TransportIconButton : public juce::Button
 {
@@ -34,6 +35,9 @@ class TransportBar : public juce::Component,
 {
 public:
     TransportBar(AudioFileManager& fileManager, SelectionManager& selection);
+
+    /** Draw selection time info and snap mode text into the given area */
+    void drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area);
     ~TransportBar() override;
 
     enum class State { Stopped, Playing, Paused, Recording };
@@ -59,6 +63,7 @@ public:
 
     void setAudioDeviceManager(juce::AudioDeviceManager* dm) { m_deviceManager = dm; }
     void setLoopManager(LoopManager* lm) noexcept { m_loopManager = lm; }
+    void setGridManager(GridManager* gm) noexcept { m_gridManager = gm; }
     void setPosition(double posSec);
     double getPosition() const noexcept { return m_position; }
 
@@ -73,7 +78,9 @@ public:
 private:
     AudioFileManager& m_fileManager;
     SelectionManager& m_selection;
+    SelectionManager& getSelection() noexcept { return m_selection; }
     LoopManager* m_loopManager = nullptr;
+    GridManager* m_gridManager = nullptr;
     juce::AudioDeviceManager* m_deviceManager = nullptr;
     std::unique_ptr<juce::AudioSourcePlayer> m_player;
 

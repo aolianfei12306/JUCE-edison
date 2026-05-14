@@ -20,7 +20,6 @@ public:
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseMove(const juce::MouseEvent& e) override;
 
-    void drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area);
 
     std::function<void(juce::Component*)> onExportDragStarted;
 

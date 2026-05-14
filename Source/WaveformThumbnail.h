@@ -19,6 +19,10 @@ public:
     double getHorizontalOffset() const noexcept { return m_horizontalOffset; }
     void   setHorizontalOffset(double offset) noexcept;
 
+    /** Vertical zoom factor. 1.0 = normal, >1 = amplify vertical scale. */
+    double getVerticalZoom() const noexcept { return m_verticalZoom; }
+    void   setVerticalZoom(double vz) noexcept;
+
     double xToTime(float x) const;
     float  timeToX(double timeSec) const;
 
@@ -29,6 +33,7 @@ private:
     SelectionManager& m_selection;
     double  m_zoom             = 1.0;
     double  m_horizontalOffset = 0.0;
+    double  m_verticalZoom     = 1.0;
     juce::Rectangle<float> m_waveformBounds;
 
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<float>& bounds);

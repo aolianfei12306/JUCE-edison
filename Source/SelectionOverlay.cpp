@@ -66,6 +66,9 @@ void SelectionOverlay::mouseDown(const juce::MouseEvent& e)
     }
 
     repaint();
+    m_thumbnail.repaint();
+    if (auto* parent = getParentComponent())
+        parent->repaint();
 }
 
 void SelectionOverlay::mouseDrag(const juce::MouseEvent& e)
@@ -94,6 +97,10 @@ void SelectionOverlay::mouseDrag(const juce::MouseEvent& e)
         break;
     }
     repaint();
+    // Ensure waveform selection highlight and parent info text update in real-time
+    m_thumbnail.repaint();
+    if (auto* parent = getParentComponent())
+        parent->repaint();
 }
 
 void SelectionOverlay::mouseUp(const juce::MouseEvent& /*e*/)
@@ -112,47 +119,4 @@ void SelectionOverlay::mouseUp(const juce::MouseEvent& /*e*/)
 
 void SelectionOverlay::paint(juce::Graphics& /*g*/) {}
 
-void SelectionOverlay::drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area)
-{
-    auto r = area;
 
-    if (m_selection.hasSelection())
-    {
-        auto start = m_selection.getSelectionStart();
-        auto end   = m_selection.getSelectionEnd();
-        auto dur   = m_selection.getSelectionDuration();
-
-        auto fmt = [](double sec) -> juce::String {
-            int m = static_cast<int>(sec) / 60;
-            double s = sec - m * 60;
-            return juce::String::formatted("%02d:%06.3f", m, s);
-        };
-
-        g.setColour(juce::Colour(0xCCE0E0E0));
-        g.setFont(12.0f);
-        g.drawText("Sel: " + fmt(start) + " - " + fmt(end) + " (" + fmt(dur) + ")",
-                   r, juce::Justification::centredLeft);
-    }
-
-    juce::StringArray snapModes;
-
-    if (m_selection.isSnapToGrid())
-    {
-        juce::String bpmText = juce::String(m_gridManager.getBPM(), 1);
-        if (bpmText.endsWith(".0"))
-            bpmText = bpmText.dropLastCharacters(2);
-
-        snapModes.add("Grid " + bpmText + "/" + juce::String(m_gridManager.getDivision()));
-    }
-
-    if (m_selection.isSnapToZero())
-        snapModes.add("ZC");
-
-    if (!snapModes.isEmpty())
-    {
-        g.setColour(juce::Colour(0xCCFFCC44));
-        g.setFont(12.0f);
-        g.drawText("  [Snap: " + snapModes.joinIntoString(", ") + "]",
-                   r, juce::Justification::centredRight);
-    }
-}

@@ -13,6 +13,11 @@ void WaveformThumbnail::setZoom(double z) noexcept
     setHorizontalOffset(m_horizontalOffset);
 }
 
+void WaveformThumbnail::setVerticalZoom(double vz) noexcept
+{
+    m_verticalZoom = juce::jlimit(0.1, 100.0, vz);
+}
+
 double WaveformThumbnail::getVisibleDuration() const noexcept
 {
     if (!m_fileManager.hasAudio()) return 1.0;
@@ -132,7 +137,10 @@ void WaveformThumbnail::drawWaveform(juce::Graphics& g, const juce::Rectangle<fl
             continue;
 
         const float centreY = lane.getCentreY();
-        const float halfHeight = lane.getHeight() * 0.48f;
+        float halfHeight = lane.getHeight() * 0.48f * static_cast<float>(m_verticalZoom);
+        // Clamp to lane bounds to avoid overflow at high vertical zoom
+        const float maxHalf = lane.getHeight() * 0.5f;
+        halfHeight = juce::jmin(halfHeight, maxHalf);
 
         for (int x = firstX; x < lastX; ++x)
         {
@@ -189,11 +197,20 @@ void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& e,
     if (!m_fileManager.hasAudio() || w.deltaY == 0.0)
         return;
 
-    const double oldZoom = m_zoom;
     const double totalDur = m_fileManager.getDurationSec();
     if (totalDur <= 0.0)
         return;
 
+    // Ctrl+Shift+wheel: vertical zoom (Edison-like: amplify waveform amplitude display)
+    if (e.mods.isCtrlDown() && e.mods.isShiftDown())
+    {
+        const double vzFactor = (w.deltaY > 0.0) ? 1.2 : 1.0 / 1.2;
+        setVerticalZoom(m_verticalZoom * vzFactor);
+        repaint();
+        return;
+    }
+
+    const double oldZoom = m_zoom;
     const double anchorTime = xToTime(e.position.x);
     const double factor = (w.deltaY > 0.0)
         ? (e.mods.isCtrlDown() ? 1.08 : 1.25)

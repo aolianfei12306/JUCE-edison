@@ -2,6 +2,7 @@
 #include "AudioFileManager.h"
 #include "SelectionManager.h"
 #include "LoopManager.h"
+#include "GridManager.h"
 
 TransportIconButton::TransportIconButton(const juce::String& name, Icon icon)
     : juce::Button(name), m_icon(icon)
@@ -132,26 +133,83 @@ void TransportBar::resized()
     m_progress.setBounds(r);
 }
 
+void TransportBar::drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area)
+{
+    auto r = area;
+
+    if (m_selection.hasSelection())
+    {
+        auto start = m_selection.getSelectionStart();
+        auto end   = m_selection.getSelectionEnd();
+        auto dur   = m_selection.getSelectionDuration();
+
+        auto fmt = [](double sec) -> juce::String {
+            int m = static_cast<int>(sec) / 60;
+            double s = sec - m * 60;
+            return juce::String::formatted("%02d:%06.3f", m, s);
+        };
+
+        g.setColour(juce::Colour(0xCCE0E0E0));
+        g.setFont(12.0f);
+        g.drawText("Sel: " + fmt(start) + " - " + fmt(end) + " (" + fmt(dur) + ")",
+                   r, juce::Justification::centredLeft);
+    }
+
+    juce::StringArray snapModes;
+
+    if (m_selection.isSnapToGrid())
+    {
+        if (m_gridManager != nullptr)
+        {
+            juce::String bpmText = juce::String(m_gridManager->getBPM(), 1);
+            if (bpmText.endsWith(".0"))
+                bpmText = bpmText.dropLastCharacters(2);
+            snapModes.add("Grid " + bpmText + "/" + juce::String(m_gridManager->getDivision()));
+        }
+        else
+        {
+            snapModes.add("Grid");
+        }
+    }
+
+    if (m_selection.isSnapToZero())
+        snapModes.add("ZC");
+
+    if (!snapModes.isEmpty())
+    {
+        g.setColour(juce::Colour(0xCCFFCC44));
+        g.setFont(12.0f);
+        g.drawText("  [Snap: " + snapModes.joinIntoString(", ") + "]",
+                   r, juce::Justification::centredRight);
+    }
+}
+
 void TransportBar::paint(juce::Graphics& g)
 {
     constexpr int infoWidth = 380;
 
     g.fillAll(juce::Colour(0xFF222244));
 
-    auto r = getLocalBounds().removeFromRight(juce::jmin(infoWidth, getWidth()));
     auto fmt = [](double sec) -> juce::String {
         int m = static_cast<int>(sec) / 60;
         double s = sec - m * 60;
         return juce::String::formatted("%02d:%06.3f", m, s);
     };
 
-    // Row 1: Time display
+    // Layout: [buttons x=0..124] [selection info x=132..372] [progress bar] [time/file info x=right-380..right]
+    // Compute the middle area: between buttons and right info panel
+    auto bounds = getLocalBounds();
+
+    // Right panel: time display + file info
+    auto rightPanel = bounds.removeFromRight(juce::jmin(infoWidth, bounds.getWidth()));
+
+    // Draw time display (Row 1 of right panel)
     double total = m_fileManager.hasAudio() ? m_fileManager.getDurationSec() : 0.0;
     g.setColour(juce::Colour(0xCCE0E0E0));
     g.setFont(12.0f);
-    g.drawText(fmt(m_position) + " / " + fmt(total), r.removeFromTop(16), juce::Justification::centredLeft);
+    g.drawText(fmt(m_position) + " / " + fmt(total), rightPanel.removeFromTop(16), juce::Justification::centredLeft);
 
-    // Row 2: File info
+    // Draw file info (Row 2 of right panel)
     if (m_fileManager.hasAudio()) {
         juce::String info;
         info += juce::String(m_fileManager.getSampleRate(), 0) + " Hz";
@@ -161,8 +219,16 @@ void TransportBar::paint(juce::Graphics& g)
 
         g.setColour(juce::Colour(0x99A0A0B0));
         g.setFont(10.0f);
-        g.drawText(info, r, juce::Justification::centredLeft);
+        g.drawText(info, rightPanel, juce::Justification::centredLeft);
     }
+
+    // Middle area (between buttons right edge ~132px and right info panel): selection info + progress bar
+    // Buttons occupy ~124px (4 × 30 + 4 gap + 2×2 inset padding)
+    constexpr int buttonAreaEnd = 132;
+    auto middleArea = getLocalBounds().withTrimmedLeft(buttonAreaEnd)
+                                       .withTrimmedRight(rightPanel.getWidth() + 4);
+    if (middleArea.getWidth() > 0)
+        drawSelectionInfo(g, middleArea);
 }
 
 void TransportBar::updateButtonStates()
