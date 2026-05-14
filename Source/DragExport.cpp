@@ -11,13 +11,19 @@ void DragExport::startDragIfOverSelection(const juce::MouseEvent& /*e*/,
 {
     if (!m_selection.hasSelection() || !m_fileManager.hasAudio()) return;
 
-    juce::File tempFile = exportSelectionAsWav(
-        juce::File::getSpecialLocation(juce::File::tempDirectory));
+    // Write exported WAV to a stable temp location so the OS file manager
+    // can copy it to the drop target during the drag operation.
+    juce::File exportDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                               .getChildFile("OpenEdisonExport");
+    exportDir.createDirectory();
+
+    juce::File tempFile = exportSelectionAsWav(exportDir);
 
     if (tempFile.existsAsFile())
     {
+        // copyFiles = true: the file is copied to the drop target, not moved
         performExternalDragDropOfFiles({tempFile.getFullPathName().toStdString()},
-                                       false, sourceComponent);
+                                       true, sourceComponent);
     }
 }
 

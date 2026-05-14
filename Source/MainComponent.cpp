@@ -105,6 +105,9 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdToggleView, juce::KeyPress('s', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::deleteKey, 0, 0));
         mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::backspaceKey, 0, 0));
+        mappings->addKeyPress(cmdCut, juce::KeyPress('x', juce::ModifierKeys::ctrlModifier, 0));
+        mappings->addKeyPress(cmdCopy, juce::KeyPress('c', juce::ModifierKeys::ctrlModifier, 0));
+        mappings->addKeyPress(cmdPaste, juce::KeyPress('v', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdAddMarker, juce::KeyPress('m', 0, 0));
         mappings->addKeyPress(cmdRemoveMarker, juce::KeyPress('m', juce::ModifierKeys::shiftModifier, 0));
         mappings->addKeyPress(cmdNextMarker, juce::KeyPress(']', 0, 0));
@@ -238,6 +241,10 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addCommandItem(m_commandManager.get(), cmdUndo);
         menu.addCommandItem(m_commandManager.get(), cmdRedo);
         menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdCut);
+        menu.addCommandItem(m_commandManager.get(), cmdCopy);
+        menu.addCommandItem(m_commandManager.get(), cmdPaste);
+        menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdPlaySel);
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdSilence);
@@ -291,6 +298,7 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
                      cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
                      cmdZoomToSelection, cmdFitAll, cmdToggleLoop, cmdToggleSnap,
+                     cmdCut, cmdCopy, cmdPaste,
                      cmdToggleGridSnap });
 }
 
@@ -403,6 +411,18 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.addDefaultKeypress('g', 0);
         info.setTicked(m_gridManager != nullptr && m_gridManager->isEnabled());
         break;
+    case cmdCut:
+        info.setInfo("Cut (Ctrl+X)", "Copy selection to clipboard and silence it", "Edit", 0);
+        info.addDefaultKeypress('x', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdCopy:
+        info.setInfo("Copy (Ctrl+C)", "Copy selection to clipboard", "Edit", 0);
+        info.addDefaultKeypress('c', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdPaste:
+        info.setInfo("Paste (Ctrl+V)", "Paste clipboard content at playhead", "Edit", 0);
+        info.addDefaultKeypress('v', juce::ModifierKeys::ctrlModifier);
+        break;
     default: break;
     }
 }
@@ -466,6 +486,15 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdFadeOut:
         fadeSelectionOut();
+        return true;
+    case cmdCut:
+        cutSelection();
+        return true;
+    case cmdCopy:
+        copySelection();
+        return true;
+    case cmdPaste:
+        pasteClipboard();
         return true;
     case cmdAddMarker: {
         if (!m_fileManager->hasAudio()) return true;
@@ -1016,4 +1045,74 @@ void MainComponent::loadAudioFile(const juce::File& file)
         resized();
         repaint();
     }
+}
+
+void MainComponent::copySelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr) return;
+
+    double sr = m_fileManager->getSampleRate();
+    int startS = static_cast<int>(m_selection->getSelectionStart() * sr);
+    int endS   = static_cast<int>(m_selection->getSelectionEnd() * sr);
+    int numS   = endS - startS;
+    if (numS <= 0) return;
+
+    startS = juce::jlimit(0, buf->getNumSamples() - 1, startS);
+    numS   = juce::jmin(numS, buf->getNumSamples() - startS);
+
+    m_clipboardBuffer = std::make_unique<juce::AudioBuffer<float>>(buf->getNumChannels(), numS);
+    for (int ch = 0; ch < buf->getNumChannels(); ++ch)
+        m_clipboardBuffer->copyFrom(ch, 0, *buf, ch, startS, numS);
+
+    m_clipboardSampleRate = sr;
+}
+
+void MainComponent::cutSelection()
+{
+    copySelection();
+    silenceSelection();
+}
+
+void MainComponent::pasteClipboard()
+{
+    if (!m_fileManager->hasAudio() || m_clipboardBuffer == nullptr)
+        return;
+
+    if (m_clipboardBuffer->getNumSamples() <= 0)
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr) return;
+
+    double sr = m_fileManager->getSampleRate();
+    double pos = m_transport->getPosition();
+    if (pos < 0.0) pos = 0.0;
+
+    int writePos = static_cast<int>(pos * sr);
+    int numS = m_clipboardBuffer->getNumSamples();
+    writePos = juce::jlimit(0, buf->getNumSamples(), writePos);
+    numS = juce::jmin(numS, buf->getNumSamples() - writePos);
+
+    int numCh = juce::jmin(buf->getNumChannels(), m_clipboardBuffer->getNumChannels());
+
+    // Save original samples for undo
+    auto action = new AudioModifyAction(*m_fileManager, writePos, numS,
+        [this, writePos, numS, numCh](juce::AudioBuffer<float>& audio, int /*start*/, int /*num*/)
+        {
+            for (int ch = 0; ch < numCh; ++ch)
+                audio.copyFrom(ch, writePos, *m_clipboardBuffer, ch, 0, numS);
+        });
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
 }

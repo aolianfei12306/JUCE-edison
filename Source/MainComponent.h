@@ -87,6 +87,9 @@ public:
         cmdToggleLoop         = 0x1040,
         cmdToggleSnap         = 0x1050,
         cmdToggleGridSnap     = 0x1060,
+        cmdCut                = 0x2001,
+        cmdCopy               = 0x2002,
+        cmdPaste              = 0x2003,
     };
 
     void loadAudioFile(const juce::File& file);
@@ -97,6 +100,9 @@ public:
     void silenceSelection();
     void reverseSelection();
     void normalizeSelection();
+    void copySelection();
+    void cutSelection();
+    void pasteClipboard();
     void fadeSelectionIn();
     void fadeSelectionOut();
     void toggleSnapToZero();
@@ -127,6 +133,10 @@ private:
     double m_preZoomLevel = 1.0;
     double m_preZoomOffset = 0.0;
     juce::AudioDeviceManager              m_deviceManager;
+
+    // Internal clipboard for copy/cut/paste
+    std::unique_ptr<juce::AudioBuffer<float>> m_clipboardBuffer;
+    double m_clipboardSampleRate = 44100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

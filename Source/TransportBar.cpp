@@ -179,8 +179,14 @@ void TransportBar::play()
     if (!m_fileManager.hasAudio()) return;
     m_state = State::Playing;
 
-    if (m_position >= m_fileManager.getDurationSec())
+    // If there's a selection and we're at the start or end,
+    // start from the selection's beginning like playSelection does.
+    // If user paused mid-playback, resume from current position.
+    if (m_selection.hasSelection() && m_position <= 0.001)
+        setPosition(m_selection.getSelectionStart());
+    else if (m_position >= m_fileManager.getDurationSec())
         setPosition(0.0);
+
     m_readIndex = static_cast<int>(m_position * m_sampleRate);
 
     if (m_deviceManager)

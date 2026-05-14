@@ -23,6 +23,8 @@ add_executable(OpenEdison)
 set_target_properties(OpenEdison PROPERTIES WIN32_EXECUTABLE TRUE)
 
 file(GLOB_RECURSE SOURCES Source/*.cpp)
+# Exclude test sources from the main target
+list(FILTER SOURCES EXCLUDE REGEX "Source/tests/.*")
 target_sources(OpenEdison PRIVATE ${SOURCES})
 
 target_include_directories(OpenEdison PRIVATE ${juce_SOURCE_DIR}/modules)
