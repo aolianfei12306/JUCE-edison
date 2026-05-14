@@ -10,6 +10,7 @@ WaveformThumbnail::WaveformThumbnail(AudioFileManager& fileManager, SelectionMan
 void WaveformThumbnail::setZoom(double z) noexcept
 {
     m_zoom = juce::jlimit(0.001, 10000.0, z);
+    setHorizontalOffset(m_horizontalOffset);
 }
 
 double WaveformThumbnail::getVisibleDuration() const noexcept
@@ -20,7 +21,7 @@ double WaveformThumbnail::getVisibleDuration() const noexcept
 
 void WaveformThumbnail::setHorizontalOffset(double offset) noexcept
 {
-    double maxOffset = m_zoom > 1.0 ? 0.0 : (1.0 - m_zoom) / m_zoom;
+    double maxOffset = m_zoom > 1.0 ? (1.0 - 1.0 / m_zoom) : 0.0;
     m_horizontalOffset = juce::jlimit(0.0, maxOffset, offset);
 }
 
@@ -185,22 +186,31 @@ void WaveformThumbnail::drawWaveform(juce::Graphics& g, const juce::Rectangle<fl
 void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& e,
                                         const juce::MouseWheelDetails& w)
 {
-    if (w.deltaY == 0.0) return;
+    if (!m_fileManager.hasAudio() || w.deltaY == 0.0)
+        return;
 
-    if (e.mods.isCtrlDown())
+    const double oldZoom = m_zoom;
+    const double totalDur = m_fileManager.getDurationSec();
+    if (totalDur <= 0.0)
+        return;
+
+    const double anchorTime = xToTime(e.position.x);
+    const double factor = (w.deltaY > 0.0)
+        ? (e.mods.isCtrlDown() ? 1.08 : 1.25)
+        : (e.mods.isCtrlDown() ? 1.0 / 1.08 : 1.0 / 1.25);
+
+    setZoom(oldZoom * factor);
+
+    auto r = getLocalBounds().toFloat();
+    const float pad = 8.0f;
+    const float drawW = r.getWidth() - pad * 2.0f;
+    if (drawW > 0.0f)
     {
-        // Ctrl+wheel: fine zoom
-        double factor = (w.deltaY > 0) ? 1.05 : 1.0 / 1.05;
-        m_zoom = juce::jlimit(0.001, 10000.0, m_zoom * factor);
-    }
-    else
-    {
-        // Plain wheel: horizontal pan/scroll (deltaY>0 = scroll right = move view forward)
-        double totalDur = m_fileManager.hasAudio() ? m_fileManager.getDurationSec() : 1.0;
-        double visibleDur = totalDur / m_zoom;
-        double scrollAmount = visibleDur * 0.1 * w.deltaY;
-        double offsetFrac = scrollAmount / totalDur;
-        setHorizontalOffset(m_horizontalOffset + offsetFrac);
+        const double anchorRatio = juce::jlimit(0.0, 1.0,
+            static_cast<double>(e.position.x - pad) / static_cast<double>(drawW));
+        const double newVisibleDuration = totalDur / m_zoom;
+        const double newOffsetTime = anchorTime - anchorRatio * newVisibleDuration;
+        setHorizontalOffset(newOffsetTime / totalDur);
     }
 
     repaint();

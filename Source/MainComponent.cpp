@@ -50,17 +50,22 @@ MainComponent::MainComponent()
 
     m_regionOverlay->onRegionSelected = [this](const RegionManager::Region& region) {
         m_selection->setSelection(region.startTime, region.endTime);
-        m_waveform->setZoom(m_waveform->getZoom() * 1.0); // force rezoom on next paint
-        // Zoom to region width
-        double duration = region.endTime - region.startTime;
-        double visibleDuration = m_waveform->getVisibleDuration();
-        double regionWidthProportion = duration / m_fileManager->getDurationSec();
-        m_waveform->setHorizontalOffset(region.startTime / m_fileManager->getDurationSec() * getWidth());
-        // Adjust zoom to show about 2x the region width
-        m_waveform->setZoom(m_waveform->getZoom() * (visibleDuration / (duration * 2.0)));
+
+        const double totalDuration = m_fileManager->getDurationSec();
+        const double regionDuration = region.endTime - region.startTime;
+        if (totalDuration > 0.0 && regionDuration > 0.0)
+        {
+            const double visibleDuration = juce::jmin(totalDuration, regionDuration * 2.0);
+            const double offsetTime = juce::jmax(0.0, region.startTime - regionDuration * 0.5);
+
+            m_waveform->setZoom(totalDuration / visibleDuration);
+            m_waveform->setHorizontalOffset(offsetTime / totalDuration);
+        }
+
         m_waveform->repaint();
         m_selectionOverlay->repaint();
         m_markerOverlay->repaint();
+        m_loopOverlay->repaint();
     };
 
     m_commandManager   = std::make_unique<juce::ApplicationCommandManager>();
