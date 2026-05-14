@@ -2,6 +2,8 @@
 #include "AudioFileManager.h"
 #include "SelectionManager.h"
 
+#include <cmath>
+
 WaveformThumbnail::WaveformThumbnail(AudioFileManager& fileManager, SelectionManager& selection)
     : m_fileManager(fileManager), m_selection(selection) {}
 
@@ -90,10 +92,15 @@ void WaveformThumbnail::paint(juce::Graphics& g)
 
 void WaveformThumbnail::drawWaveform(juce::Graphics& g, const juce::Rectangle<float>& bounds)
 {
-    auto* thumb = m_fileManager.getThumbnail();
-    if (thumb == nullptr) return;
+    auto* buffer = m_fileManager.getBuffer();
+    if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0)
+        return;
 
     double totalDur = m_fileManager.getDurationSec();
+    double sampleRate = m_fileManager.getSampleRate();
+    if (totalDur <= 0.0 || sampleRate <= 0.0 || bounds.getWidth() <= 0.0f || bounds.getHeight() <= 0.0f)
+        return;
+
     double visible  = totalDur / m_zoom;
     double offsetT  = m_horizontalOffset * totalDur;
     double startTime = juce::jmax(0.0, offsetT);
@@ -101,13 +108,78 @@ void WaveformThumbnail::drawWaveform(juce::Graphics& g, const juce::Rectangle<fl
 
     if (endTime <= startTime) return;
 
+    juce::Graphics::ScopedSaveState clipState(g);
+    g.reduceClipRegion(bounds.toNearestInt());
+
+    const int totalSamples = buffer->getNumSamples();
+    const int numChannels = buffer->getNumChannels();
+    const int firstX = static_cast<int>(std::floor(bounds.getX()));
+    const int lastX = static_cast<int>(std::ceil(bounds.getRight()));
+    const double startSample = startTime * sampleRate;
+    const double endSample = endTime * sampleRate;
+    const double visibleSamples = juce::jmax(1.0, endSample - startSample);
+
     g.setColour(juce::Colour(0xFF4FC3F7));
-    thumb->drawChannels(g, bounds.toNearestInt(), startTime, endTime, 1.0f);
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        auto channelBounds = bounds.withTrimmedTop(bounds.getHeight() * static_cast<float>(ch) / static_cast<float>(numChannels))
+                                   .withHeight(bounds.getHeight() / static_cast<float>(numChannels));
+        auto lane = channelBounds.reduced(0.0f, 3.0f);
+
+        if (lane.getHeight() <= 1.0f)
+            continue;
+
+        const float centreY = lane.getCentreY();
+        const float halfHeight = lane.getHeight() * 0.48f;
+
+        for (int x = firstX; x < lastX; ++x)
+        {
+            const double pixelStart = juce::jlimit(0.0, 1.0,
+                (static_cast<double>(x) - static_cast<double>(bounds.getX())) / static_cast<double>(bounds.getWidth()));
+            const double pixelEnd = juce::jlimit(0.0, 1.0,
+                (static_cast<double>(x + 1) - static_cast<double>(bounds.getX())) / static_cast<double>(bounds.getWidth()));
+
+            int sampleStart = static_cast<int>(std::floor(startSample + pixelStart * visibleSamples));
+            int sampleEnd = static_cast<int>(std::ceil(startSample + pixelEnd * visibleSamples));
+
+            sampleStart = juce::jlimit(0, totalSamples - 1, sampleStart);
+            sampleEnd = juce::jlimit(sampleStart + 1, totalSamples, sampleEnd);
+
+            const auto range = buffer->findMinMax(ch, sampleStart, sampleEnd - sampleStart);
+            const float top = centreY - juce::jlimit(-1.0f, 1.0f, range.getEnd()) * halfHeight;
+            const float bottom = centreY - juce::jlimit(-1.0f, 1.0f, range.getStart()) * halfHeight;
+            const float y1 = juce::jmin(top, bottom);
+            const float y2 = juce::jmax(top, bottom);
+
+            g.drawLine(static_cast<float>(x) + 0.5f, y1,
+                       static_cast<float>(x) + 0.5f, juce::jmax(y1 + 1.0f, y2), 1.0f);
+        }
+
+        if (numChannels > 1)
+        {
+            g.setColour(juce::Colour(0x22FFFFFF));
+            g.drawHorizontalLine(static_cast<int>(channelBounds.getBottom()), bounds.getX(), bounds.getRight());
+            g.setColour(juce::Colour(0xFF4FC3F7));
+        }
+    }
 
     // Centre line
     g.setColour(juce::Colour(0x33FFFFFF));
-    float midY = bounds.getCentreY();
-    g.drawHorizontalLine(static_cast<int>(midY), bounds.getX(), bounds.getRight());
+    if (numChannels == 1)
+    {
+        float midY = bounds.getCentreY();
+        g.drawHorizontalLine(static_cast<int>(midY), bounds.getX(), bounds.getRight());
+    }
+    else
+    {
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            auto channelBounds = bounds.withTrimmedTop(bounds.getHeight() * static_cast<float>(ch) / static_cast<float>(numChannels))
+                                       .withHeight(bounds.getHeight() / static_cast<float>(numChannels));
+            g.drawHorizontalLine(static_cast<int>(channelBounds.getCentreY()), bounds.getX(), bounds.getRight());
+        }
+    }
 }
 
 void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& e,
