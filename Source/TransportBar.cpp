@@ -98,6 +98,9 @@ TransportBar::TransportBar(AudioFileManager& fileManager, SelectionManager& sele
         isRecording() ? stopRecording() : startRecording();
     };
 
+    m_progress.setRange(0.0, 1.0, 0.0);
+    m_progress.setValue(0.0, juce::dontSendNotification);
+
     m_progress.onValueChange = [this] {
         if (m_fileManager.hasAudio())
             setPosition(m_progress.getValue() * m_fileManager.getDurationSec());
@@ -115,6 +118,8 @@ TransportBar::~TransportBar()
 
 void TransportBar::resized()
 {
+    constexpr int infoWidth = 380;
+
     auto r = getLocalBounds().reduced(4, 2);
     int bw = 30;
     m_playBtn.setBounds  (r.removeFromLeft(bw).reduced(2));
@@ -122,14 +127,18 @@ void TransportBar::resized()
     m_stopBtn.setBounds  (r.removeFromLeft(bw).reduced(2));
     m_recordBtn.setBounds(r.removeFromLeft(bw).reduced(2));
     r.removeFromLeft(4);
+
+    r.removeFromRight(juce::jmin(infoWidth, r.getWidth()));
     m_progress.setBounds(r);
 }
 
 void TransportBar::paint(juce::Graphics& g)
 {
+    constexpr int infoWidth = 380;
+
     g.fillAll(juce::Colour(0xFF222244));
 
-    auto r = getLocalBounds().removeFromRight(380);
+    auto r = getLocalBounds().removeFromRight(juce::jmin(infoWidth, getWidth()));
     auto fmt = [](double sec) -> juce::String {
         int m = static_cast<int>(sec) / 60;
         double s = sec - m * 60;
@@ -215,6 +224,8 @@ void TransportBar::setPosition(double posSec)
 {
     if (!m_fileManager.hasAudio()) return;
     double total = m_fileManager.getDurationSec();
+    if (total <= 0.0) return;
+
     m_position = juce::jlimit(0.0, total, posSec);
     m_readIndex = static_cast<int>(m_position * m_sampleRate);
     m_selection.setPlaybackPosition(m_position);
