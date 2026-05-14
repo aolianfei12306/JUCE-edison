@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <atomic>
 
 class AudioFileManager;
 class SelectionManager;
@@ -87,7 +88,7 @@ private:
     State  m_state      = State::Stopped;
     double m_position   = 0.0;
     double m_sampleRate = 44100.0;
-    int    m_readIndex  = 0;
+    std::atomic<int> m_readIndex{0};
 
     std::unique_ptr<juce::AudioBuffer<float>> m_recordedBuffer;
     double m_recordedSampleRate   = 44100.0;

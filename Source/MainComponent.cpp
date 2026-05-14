@@ -126,12 +126,36 @@ MainComponent::MainComponent()
     }
     setInterceptsMouseClicks(true, true);
 
-    // Recording finished callback + spectrogram playhead
+    // Recording finished callback + spectrogram playhead + waveform auto-scroll
     m_transport->onPositionChanged = [this](double pos) {
         if (pos >= 0.0) {
             // Forward playback position to spectrogram for playhead cursor
             m_markerOverlay->setPlaybackPosition(pos);
             m_spectrogram->setPlaybackPosition(pos);
+
+            // Waveform auto-scroll during playback (follow the playhead)
+            if (m_viewMode == WaveformView && m_fileManager->hasAudio())
+            {
+                double totalDur = m_fileManager->getDurationSec();
+                if (totalDur > 0.0)
+                {
+                    double viewDur = m_waveform->getVisibleDuration();
+                    double offset  = m_waveform->getHorizontalOffset();
+                    double rightEdge = offset * totalDur + viewDur;
+                    double threshold = viewDur * 0.15; // 85% into viewport
+
+                    if (pos > rightEdge - threshold)
+                    {
+                        double newOffsetTime = pos - viewDur * 0.7;
+                        m_waveform->setHorizontalOffset(newOffsetTime / totalDur);
+                        m_waveform->repaint();
+                        m_selectionOverlay->repaint();
+                        m_markerOverlay->repaint();
+                        m_gridOverlay->repaint();
+                        m_loopOverlay->repaint();
+                    }
+                }
+            }
             return;
         }
         // pos < 0 means recording finished

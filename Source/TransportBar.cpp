@@ -392,10 +392,10 @@ void TransportBar::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         ++m_readIndex;
     }
 
-    double newPos = static_cast<double>(m_readIndex) / m_sampleRate;
-    m_selection.setPlaybackPosition(newPos);
+    double newPos = static_cast<double>(m_readIndex.load()) / m_sampleRate;
 
     juce::MessageManager::callAsync([this, newPos] {
+        m_selection.setPlaybackPosition(newPos);
         m_position = newPos;
         if (m_fileManager.hasAudio())
             m_progress.setValue(m_position / m_fileManager.getDurationSec(),

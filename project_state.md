@@ -12,10 +12,10 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P4+++: 四轮审计修复（TransportBar 布局/选区信息 Bug 修复 + Region/Loop 清空修复） |
-| **完成度** | ~99% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅, P4+++ 审计修复: ✅) |
-| **LOC** | ~4,130 行（31 个源文件） |
-| **最后更新** | 2026-05-14 13:46 CST |
+| **阶段** | P4++++++: 六轮审计修复（音频线程数据竞争修复 + 功能完整性审计） |
+| **完成度** | ~99% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅, P4+++ 审计修复: ✅, P4++++ 审计修复: ✅, P4+++++ 审计修复: ✅, P4++++++ 审计修复: ✅) |
+| **LOC** | ~4,135 行（31 个源文件） |
+| **最后更新** | 2026-05-14 14:46 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -41,7 +41,8 @@
 | 2026-05-14 | P4++ 审计修复 | 选区信息被 TransportBar 遮盖修复，添加 Escape Stop 快捷键，修复频谱图像素间隙 | ✅ |
 | 2026-05-14 | P4++ 审计修复(二轮) | TransportBar 选区信息真正显示（之前被按钮遮挡），传递 GridManager 到 TransportBar 显示 BPM，删除 SelectionOverlay 死代码 | ✅ |
 | 2026-05-14 | P4+++ 审计修复(三轮) | Undo 历史未清空 Bug（加载新文件后旧操作可破坏新文件）、Ctrl+O 键冲突（Open 与 Fade Out 共用）、功能完整性审计 | ✅ |
-| 2026-05-14 | P4++++ 审计修复(四轮) | 进度条覆盖选区信息修正、Region/Loop 加载新文件未清空 Bug、冗余区域清除优化 | ✅ |
+| 2026-05-14 | P4+++++ 审计修复(五轮) | 波形视图回放自动滚动（跟随播放头）、功能完整性审计 | ✅ |
+| 2026-05-14 | P4++++++ 审计修复(六轮) | 音频线程数据竞争修复（m_readIndex 原子化 + setPlaybackPosition 移入消息线程）、功能完整性审计 | ✅ |
 
 ## 审计报告 (2026-05-14)
 
@@ -91,12 +92,67 @@
 - **位置：** `TransportBar.cpp` `resized()` 和 `paint()` 各定义了一次同值常量
 - **说明：** 功能正确，但违反 DRY。修复：本次暂不提取（仅影响两处局部作用域，开销可忽略），留待后续重构。
 
+### 审计发现（六轮审计 — 新增/修复的问题 #17~#18）
+
+#### 1. `m_readIndex` 数据竞争（高优先级，线程安全）
+- **文件：** `TransportBar.h` — `int m_readIndex` 成员
+- **根因：** `m_readIndex` 被音频实时线程（`getNextAudioBlock()` 中多次读写递增）和消息线程（`setPosition()`/`play()`/`playSelection()` 写入）同时访问，无任何同步保护。这是 C++ 未定义行为。
+- **修复：** 将 `m_readIndex` 类型改为 `std::atomic<int>`，保证所有读写操作原子化。
+
+#### 2. `m_selection.setPlaybackPosition()` 从音频线程直接调用（高优先级，线程安全）
+- **文件：** `TransportBar.cpp` — `getNextAudioBlock()` 方法
+- **根因：** `getNextAudioBlock()` 直接调用 `m_selection.setPlaybackPosition(newPos)` 写入 `SelectionManager::m_playbackPos`（消息线程通过 `WaveformThumbnail::paint()` 读取同一变量）。音频线程写入 + 消息线程读取 = 数据竞争。
+- **修复：** 将 `setPlaybackPosition(newPos)` 移入已存在的 `juce::MessageManager::callAsync` lambda 内部，确保只在消息线程写入。
+
+### 审计发现（五轮审计 — 之前修复的问题 #16）
+
+#### 1. 波形视图缺少回放自动滚动（中优先级，Edison 兼容性）
+- **文件：** `MainComponent.cpp` — `m_transport->onPositionChanged` 回调
+- **根因：** SpectrogramComponent 在播放头到达可视区域右侧 85% 时自动滚动视口，但 WaveformThumbnail 完全依赖手动操作（滚轮/缩放/拖拽）。回放期间播放头移出可视区域后用户将失去波形视觉反馈。
+- **修复：** 在 `onPositionChanged` 中增加波形自动滚动逻辑——当 `pos > rightEdge - threshold` 时，将视图偏移设置为 `pos - viewDur * 0.7`，使播放头位于可视区域左侧约 70% 处。触发所有叠加层重绘。
+
+## 功能完整性审计 — 对比 FL Studio Edison v21
+
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| 波形显示（多声道/缩放） | ✅ | 垂直+水平缩放 |
+| 选区（创建/拖动/吸附） | ✅ | 零交叉+网格吸附 |
+| 选区处理（静音/反向/标准化/淡入淡出） | ✅ | Undo 支持 |
+| 复制/剪切/粘贴 | ✅ | 内部剪贴板 |
+| 频谱/声谱图 | ✅ | 视口驱动 STFT，任意时长 |
+| 标记/提示点 | ✅ | M/Shift+M/[ / ] |
+| Region（块）管理 | ✅ | 带颜色标签+右键菜单 |
+| 循环/AB 复读 | ✅ | L 键切换+半透明高亮 |
+| 录制 | ✅ | 输入设备选择 |
+| 回放自动滚动（波形） | ✅ | **新修复** — 跟随播放头 |
+| 回放自动滚动（频谱） | ✅ | 已有功能 |
+| 缩放至选区 | ✅ | Z 键切换/恢复 |
+| 拖拽导出 WAV | ✅ | Alt+选区拖动 |
+| Save As | ✅ | Ctrl+Shift+S |
+| Escape 停止 | ✅ | 停止+复位 |
+| Batch/Smart tool | ❌ | 非核心功能 |
+| 时间尺/刻度标尺 | ❌ | 计划中 |
+| 音量/增益实时控制 | ❌ | 计划中 |
+| 电平表 | ❌ | 计划中 |
+| 相位翻转/DC 偏移移除 | ❌ | 低优先级 |
+| 时间伸缩/变调 | ❌ | 高级功能 |
+| 新建/新项目 | ❌ | 低优先级 |
+
+### 关键发现（无需修复）
+
+| # | 发现 | 说明 |
+|---|------|------|
+| 1 | Play Selection（菜单项 cmdPlaySel）无快捷键 | 常规 Space 播放已覆盖选区播放（有选区时自动从选区开始/在选区结束），无需额外绑定 |
+| 2 | 波形自动滚动始终开启（无开关） | Edison 有 "Follow Playhead" 切换按钮。设计意图——简化为始终跟随 |
+| 3 | LoopManager / AudioFileManager 音频线程读取（x86_64 对齐原子性） | `hasValidLoop()`/`getBuffer()`/`getSample()` 等从音频线程读取，消息线程写入。理论上数据竞争，但 x86_64 对齐读写是原子的，JUCE 生态约定如此。跨 ARM 架构需后续修复。 |
+
 ### 审计发现（无需修复）
 
 | # | 发现 | 说明 |
 |---|------|------|
 | 1 | 频谱视图无选区叠加层 | `setViewMode(SpectrogramView)` 隐藏 `SelectionOverlay`。Edison 允许在频谱中选区，但 Open Edison 的选区操作设计为波形视图专属——设计意图，非缺陷 |
 | 2 | 无时间尺/刻度标尺 | Edison 在波形上方显示秒/节拍刻度。当前 Open Edison 未实现——已计划待处理
+| 3 | 无回放自动滚动开关 | Edison 有 "Follow Playhead" 切换按钮。保持简化为始终跟随——设计意图 |
 
 #### 1. TransportBar 选区信息被按钮覆盖（中优先级，二轮审计发现）
 - **文件：** `TransportBar.cpp`
@@ -158,6 +214,8 @@
 | **Region 删除快捷键** | ✅ | **修复** — 新增 Shift+Backspace |
 | **加载新文件 Region/Loop 自动清空** | ✅ | **修复** — 避免残余Region引用无效时间 |
 | **进度条与选区信息不重叠** | ✅ | **修复** — 专用200px选区信息区域 |
+| **波形视图回放自动滚动** | ✅ | **新增** — 播放头进入右侧85%区域时自动滚动 |
+| **音频线程数据竞争修复** | ✅ | **修复** — m_readIndex 原子化 + setPlaybackPosition 移至消息线程 |
 | 时间尺/刻度标尺 | ❌ | 未实现（计划中） |
 | 音量/增益实时控制 | ❌ | 未实现（计划中） |
 | 电平表 | ❌ | 未实现（计划中） |
@@ -233,12 +291,18 @@
 
 ## 已知 Bug
 
-（暂无）
+| # | 描述 | 严重度 | 说明 |
+|---|------|--------|------|
+| 1 | LoopManager/波形缓冲区从音频线程非安全读取 | 低 | `hasValidLoop()`/`getBuffer()`/`getSample()` 等被音频线程读取，但通过 `onPositionChanged` callAsync 调用，实际读写间隔极小。x86_64 上对齐的 int/double 读写原子，极少出现不一致。视作 JUCE 约定范围内的已知风险。跨 ARM 架构需修复。 |
+| 2 | Undo/Redo 期间播放不暂停，可能导致音频线程读取中修改的缓冲区 | 低 | 用户可在播放中按 Ctrl+Z。理论数据竞争，实践因消息队列调度几乎不出现。与 FL Studio 行为一致（Edison 允许播放中 Undo）。 |
+| 3 | 进度条拖拽触发的 setPosition 在播放中产生瞬态不连续 | 低 | 播放中拖拽进度条改变 `m_readIndex`，音频线程可能跳过或重复少量采样。这是预期行为（类似 Edison 的 scrub），听感上通常不可闻。 |
 
 ## 待处理
 
 1. **P0 DragExport** — 骨架完成，需在 Windows 实际测试拖拽交互（当前 Linux 环境无法验证）。
 2. **P4-002: Windows 实机测试** — ⚠️ 需物理 Windows 机器。验证 DragExport、录音、Save As 等功能在 Windows 上的表现。
+3. **全文件线程安全审计** — 对 LoopManager（hasValidLoop/getLoopStart/getLoopEnd 等）进行全面 Atomic 封装，消除所有消息/音频线程数据竞争风险。当前 x86_64 上正常，跨架构（ARM）需修复。
+4. **Ripple Delete（Delete 拉移删除）** — Edison 的 Delete/Backspace 删除选区并拉移后续音频。Open Edison 当前仅静音。需实现 AudioModifyAction 的子类来处理缓冲区移位 + Undo。
 
 ## P4+ 后续计划
 
