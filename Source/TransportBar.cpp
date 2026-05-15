@@ -131,8 +131,19 @@ void TransportBar::resized()
 
     // Reserve 200px for selection info text (left of progress bar, after buttons)
     r.removeFromRight(juce::jmin(infoWidth, r.getWidth()));
-    auto selInfoArea = r.removeFromLeft(200);
+    r.removeFromLeft(200);
     m_progress.setBounds(r);
+}
+
+void TransportBar::updateButtonStates()
+{
+    bool hasAudio = m_fileManager.hasAudio();
+    m_playBtn.setEnabled(hasAudio);
+    m_pauseBtn.setEnabled(m_state == State::Playing);
+    m_stopBtn.setEnabled(m_state != State::Stopped);
+    m_progress.setEnabled(hasAudio);
+    m_recordBtn.setIcon(isRecording() ? TransportIconButton::Icon::RecordStop
+                                      : TransportIconButton::Icon::Record);
 }
 
 void TransportBar::drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<int>& area)
@@ -151,10 +162,12 @@ void TransportBar::drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<in
             return juce::String::formatted("%02d:%06.3f", m, s);
         };
 
+        // Draw selection time on left half
         g.setColour(juce::Colour(0xCCE0E0E0));
         g.setFont(12.0f);
+        auto selTextRect = r.removeFromLeft(r.getWidth() / 2);
         g.drawText("Sel: " + fmt(start) + " - " + fmt(end) + " (" + fmt(dur) + ")",
-                   r, juce::Justification::centredLeft);
+                   selTextRect, juce::Justification::centredLeft);
     }
 
     juce::StringArray snapModes;
@@ -179,10 +192,13 @@ void TransportBar::drawSelectionInfo(juce::Graphics& g, const juce::Rectangle<in
 
     if (!snapModes.isEmpty())
     {
+        // Draw snap info on right half
         g.setColour(juce::Colour(0xCCFFCC44));
         g.setFont(12.0f);
+        auto snapArea = area;
+        auto snapRect = snapArea.removeFromRight(snapArea.getWidth() / 2);
         g.drawText("  [Snap: " + snapModes.joinIntoString(", ") + "]",
-                   r, juce::Justification::centredRight);
+                   snapRect, juce::Justification::centredRight);
     }
 }
 
@@ -226,21 +242,14 @@ void TransportBar::paint(juce::Graphics& g)
 
     // Selection info: draw directly in the dedicated 200px area between buttons and progress bar
     // Buttons occupy ~124px (4 × 30 + 4 gap + 2×2 inset padding)
-    constexpr int buttonAreaEnd = 132;
+    // Selection info: matches resized() layout
+    // Buttons occupy 4×30 + 4 gap + 2×2 inset from reduced(4,2) = ~128px from left edge
+    constexpr int buttonAreaEnd = 128;
     constexpr int selInfoWidth = 200;
     auto selArea = getLocalBounds().withTrimmedLeft(buttonAreaEnd)
                                     .withWidth(selInfoWidth);
     if (selArea.getWidth() > 0)
         drawSelectionInfo(g, selArea);
-}
-
-void TransportBar::updateButtonStates()
-{
-    m_playBtn.setEnabled(m_fileManager.hasAudio());
-    m_pauseBtn.setEnabled(m_state == State::Playing);
-    m_stopBtn.setEnabled(m_state != State::Stopped);
-    m_recordBtn.setIcon(isRecording() ? TransportIconButton::Icon::RecordStop
-                                      : TransportIconButton::Icon::Record);
 }
 
 void TransportBar::play()
@@ -340,13 +349,36 @@ void TransportBar::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     }
 
     auto* src = m_fileManager.getBuffer();
-    if (src == nullptr) { bufferToFill.clearActiveBufferRegion(); stop(); return; }
+    if (src == nullptr) {
+        bufferToFill.clearActiveBufferRegion();
+        m_state.store(State::Stopped);
+        juce::MessageManager::callAsync([this] { stop(); });
+        return;
+    }
 
     int numSamples   = bufferToFill.numSamples;
     int totalSamples = src->getNumSamples();
     int numCh        = juce::jmin(bufferToFill.buffer->getNumChannels(), src->getNumChannels());
 
     bool shouldLoop = (m_loopManager != nullptr && m_loopManager->hasValidLoop());
+    bool hasSelection = (!shouldLoop && m_selection.hasSelection());
+
+    // Pre-compute loop bounds to avoid manager calls in the inner loop
+    int loopStartSample = 0;
+    int loopEndSample   = totalSamples;
+    int selectionEndSample = totalSamples;
+    if (shouldLoop)
+    {
+        loopStartSample = static_cast<int>(m_loopManager->getLoopStart() * m_sampleRate);
+        loopStartSample = juce::jlimit(0, totalSamples - 1, loopStartSample);
+        loopEndSample = static_cast<int>(m_loopManager->getLoopEnd() * m_sampleRate);
+        loopEndSample = juce::jmin(loopEndSample, totalSamples);
+    }
+    else if (hasSelection)
+    {
+        selectionEndSample = static_cast<int>(m_selection.getSelectionEnd() * m_sampleRate);
+        selectionEndSample = juce::jmin(selectionEndSample, totalSamples);
+    }
 
     for (int s = 0; s < numSamples; ++s)
     {
@@ -354,35 +386,26 @@ void TransportBar::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
         {
             if (shouldLoop)
             {
-                // End of file with loop enabled: wrap to loop start
-                int loopStartSample = static_cast<int>(m_loopManager->getLoopStart() * m_sampleRate);
-                loopStartSample = juce::jlimit(0, totalSamples - 1, loopStartSample);
                 m_readIndex = loopStartSample;
             }
             else
             {
-                stop();
+                m_state.store(State::Stopped);
+                juce::MessageManager::callAsync([this] { stop(); });
                 return;
             }
         }
 
-        // Check loop end boundary (for non-file-end wrapping)
         if (shouldLoop)
         {
-            int loopEndSample = static_cast<int>(m_loopManager->getLoopEnd() * m_sampleRate);
-            loopEndSample = juce::jmin(loopEndSample, totalSamples);
             if (m_readIndex >= loopEndSample)
-            {
-                int loopStartSample = static_cast<int>(m_loopManager->getLoopStart() * m_sampleRate);
-                loopStartSample = juce::jlimit(0, totalSamples - 1, loopStartSample);
                 m_readIndex = loopStartSample;
-            }
         }
-        else if (m_selection.hasSelection())
+        else if (hasSelection && m_readIndex >= selectionEndSample)
         {
-            // Original selection-end check (only when loop is OFF)
-            double pos = static_cast<double>(m_readIndex) / m_sampleRate;
-            if (pos >= m_selection.getSelectionEnd()) { stop(); return; }
+            m_state.store(State::Stopped);
+            juce::MessageManager::callAsync([this] { stop(); });
+            return;
         }
 
         for (int ch = 0; ch < numCh; ++ch)
@@ -395,6 +418,7 @@ void TransportBar::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
     double newPos = static_cast<double>(m_readIndex.load()) / m_sampleRate;
 
     juce::MessageManager::callAsync([this, newPos] {
+        if (m_state != State::Playing) return;
         m_selection.setPlaybackPosition(newPos);
         m_position = newPos;
         if (m_fileManager.hasAudio())

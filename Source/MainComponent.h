@@ -62,6 +62,7 @@ public:
 
     enum CommandIDs
     {
+        cmdNew       = 0x1000,
         cmdOpen      = 0x1001,
         cmdSaveAs    = 0x1001B,
         cmdPlayPause = 0x1002,
@@ -90,11 +91,14 @@ public:
         cmdToggleLoop         = 0x1040,
         cmdToggleSnap         = 0x1050,
         cmdToggleGridSnap     = 0x1060,
+        cmdSetBPM             = 0x1071,
+        cmdSelectAll          = 0x1070,
         cmdCut                = 0x2001,
         cmdCopy               = 0x2002,
         cmdPaste              = 0x2003,
     };
 
+    void newProject();
     void loadAudioFile(const juce::File& file);
     void addRegionFromSelection();
     void zoomToSelection();
@@ -110,6 +114,7 @@ public:
     void fadeSelectionOut();
     void toggleSnapToZero();
     void toggleGridSnap();
+    void showBPMDialog();
 
 private:
     std::unique_ptr<SelectionManager>    m_selection;
@@ -131,7 +136,7 @@ private:
     std::unique_ptr<RegionOverlay>        m_regionOverlay;
     std::unique_ptr<LoopManager>          m_loopManager;
     std::unique_ptr<LoopOverlay>          m_loopOverlay;
-    int m_currentRegionCycler = -1;
+
     bool m_zoomedToSelection = false;
     double m_preZoomLevel = 1.0;
     double m_preZoomOffset = 0.0;

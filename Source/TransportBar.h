@@ -58,9 +58,9 @@ public:
     void startRecording();
     void stopRecording();
 
-    bool isRecording() const noexcept { return m_state == State::Recording; }
-    bool isPlaying()   const noexcept { return m_state == State::Playing; }
-    State getState()   const noexcept { return m_state; }
+    bool isRecording() const noexcept { return m_state.load() == State::Recording; }
+    bool isPlaying()   const noexcept { return m_state.load() == State::Playing; }
+    State getState()   const noexcept { return m_state.load(); }
 
     void setAudioDeviceManager(juce::AudioDeviceManager* dm) { m_deviceManager = dm; }
     void setLoopManager(LoopManager* lm) noexcept { m_loopManager = lm; }
@@ -85,14 +85,14 @@ private:
     juce::AudioDeviceManager* m_deviceManager = nullptr;
     std::unique_ptr<juce::AudioSourcePlayer> m_player;
 
-    State  m_state      = State::Stopped;
+    std::atomic<State>  m_state      = State::Stopped;
     double m_position   = 0.0;
     double m_sampleRate = 44100.0;
     std::atomic<int> m_readIndex{0};
 
     std::unique_ptr<juce::AudioBuffer<float>> m_recordedBuffer;
     double m_recordedSampleRate   = 44100.0;
-    int    m_recordedChannels     = 0;
+    int     m_recordedChannels     = 0;
     juce::CriticalSection m_recordingLock;
 
     TransportIconButton m_playBtn   { "Play", TransportIconButton::Icon::Play };

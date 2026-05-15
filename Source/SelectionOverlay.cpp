@@ -41,6 +41,7 @@ void SelectionOverlay::mouseMove(const juce::MouseEvent& e)
 void SelectionOverlay::mouseDown(const juce::MouseEvent& e)
 {
     m_dragMode = hitTestEdge(e);
+    m_exportFired = false;
 
     if (m_dragMode == DragMode::None)
     {
@@ -90,8 +91,11 @@ void SelectionOverlay::mouseDrag(const juce::MouseEvent& e)
         m_selection.setSelection(m_selection.getSelectionStart(), t);
         break;
     case DragMode::Export:
-        if (onExportDragStarted)
-            onExportDragStarted(this);
+        if (!m_exportFired) {
+            m_exportFired = true;
+            if (onExportDragStarted)
+                onExportDragStarted(this);
+        }
         break;
     default:
         break;

@@ -194,7 +194,7 @@ void WaveformThumbnail::drawWaveform(juce::Graphics& g, const juce::Rectangle<fl
 void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& e,
                                         const juce::MouseWheelDetails& w)
 {
-    if (!m_fileManager.hasAudio() || w.deltaY == 0.0)
+    if (!m_fileManager.hasAudio())
         return;
 
     const double totalDur = m_fileManager.getDurationSec();
@@ -204,31 +204,63 @@ void WaveformThumbnail::mouseWheelMove(const juce::MouseEvent& e,
     // Ctrl+Shift+wheel: vertical zoom (Edison-like: amplify waveform amplitude display)
     if (e.mods.isCtrlDown() && e.mods.isShiftDown())
     {
+        if (w.deltaY == 0.0) return;
         const double vzFactor = (w.deltaY > 0.0) ? 1.2 : 1.0 / 1.2;
         setVerticalZoom(m_verticalZoom * vzFactor);
         repaint();
         return;
     }
 
-    const double oldZoom = m_zoom;
-    const double anchorTime = xToTime(e.position.x);
-    const double factor = (w.deltaY > 0.0)
-        ? (e.mods.isCtrlDown() ? 1.08 : 1.25)
-        : (e.mods.isCtrlDown() ? 1.0 / 1.08 : 1.0 / 1.25);
-
-    setZoom(oldZoom * factor);
-
-    auto r = getLocalBounds().toFloat();
-    const float pad = 8.0f;
-    const float drawW = r.getWidth() - pad * 2.0f;
-    if (drawW > 0.0f)
+    // Handle horizontal scroll (deltaX from trackpad)
+    if (w.deltaX != 0.0)
     {
-        const double anchorRatio = juce::jlimit(0.0, 1.0,
-            static_cast<double>(e.position.x - pad) / static_cast<double>(drawW));
-        const double newVisibleDuration = totalDur / m_zoom;
-        const double newOffsetTime = anchorTime - anchorRatio * newVisibleDuration;
-        setHorizontalOffset(newOffsetTime / totalDur);
+        double visibleDur = totalDur / m_zoom;
+        double scrollAmount = -visibleDur * 0.1 * w.deltaX;
+        double offsetTime = m_horizontalOffset * totalDur + scrollAmount;
+        setHorizontalOffset(offsetTime / totalDur);
+        repaint();
+        if (onUserViewChanged)
+            onUserViewChanged(m_zoom, m_horizontalOffset * totalDur);
+        return;
     }
 
-    repaint();
+    if (w.deltaY == 0.0)
+        return;
+
+    // Ctrl+wheel: zoom (consistent with SpectrogramComponent)
+    if (e.mods.isCtrlDown())
+    {
+        const double oldZoom = m_zoom;
+        const double anchorTime = xToTime(e.position.x);
+        const double factor = (w.deltaY > 0.0) ? 1.05 : 1.0 / 1.05;
+
+        setZoom(oldZoom * factor);
+
+        auto r = getLocalBounds().toFloat();
+        const float pad = 8.0f;
+        const float drawW = r.getWidth() - pad * 2.0f;
+        if (drawW > 0.0f)
+        {
+            const double anchorRatio = juce::jlimit(0.0, 1.0,
+                static_cast<double>(e.position.x - pad) / static_cast<double>(drawW));
+            const double newVisibleDuration = totalDur / m_zoom;
+            const double newOffsetTime = anchorTime - anchorRatio * newVisibleDuration;
+            setHorizontalOffset(newOffsetTime / totalDur);
+        }
+        repaint();
+        if (onUserViewChanged)
+            onUserViewChanged(m_zoom, m_horizontalOffset * totalDur);
+        return;
+    }
+
+    // Plain wheel: horizontal scroll
+    {
+        double visibleDur = totalDur / m_zoom;
+        double scrollAmount = visibleDur * 0.10 * w.deltaY;
+        double offsetTime = m_horizontalOffset * totalDur + scrollAmount;
+        setHorizontalOffset(offsetTime / totalDur);
+        repaint();
+        if (onUserViewChanged)
+            onUserViewChanged(m_zoom, m_horizontalOffset * totalDur);
+    }
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
 
 class AudioFileManager;
 class SelectionManager;
@@ -22,6 +23,12 @@ public:
     /** Vertical zoom factor. 1.0 = normal, >1 = amplify vertical scale. */
     double getVerticalZoom() const noexcept { return m_verticalZoom; }
     void   setVerticalZoom(double vz) noexcept;
+
+    /** Callback fired when user manually zooms or scrolls via mouse wheel.
+     *  Reports the effective zoom factor and offset-in-seconds.
+     *  MainComponent uses this to keep the spectrogram view in sync.
+     */
+    std::function<void(double zoom, double offsetSec)> onUserViewChanged;
 
     double xToTime(float x) const;
     float  timeToX(double timeSec) const;

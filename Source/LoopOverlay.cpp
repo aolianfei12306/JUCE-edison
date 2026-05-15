@@ -25,8 +25,8 @@ void LoopOverlay::paint(juce::Graphics& g)
     loopStart = juce::jlimit(0.0, totalDur, loopStart);
     loopEnd   = juce::jlimit(0.0, totalDur, loopEnd);
 
-    float x1 = m_waveformThumbnail.timeToX(static_cast<float>(loopStart));
-    float x2 = m_waveformThumbnail.timeToX(static_cast<float>(loopEnd));
+    float x1 = m_waveformThumbnail.timeToX(loopStart);
+    float x2 = m_waveformThumbnail.timeToX(loopEnd);
 
     auto loopRect = juce::Rectangle<float>(x1, 0.0f, x2 - x1, area.getHeight());
 

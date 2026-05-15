@@ -18,9 +18,11 @@ RegionOverlay::RegionOverlay(RegionManager& mgr, AudioFileManager& afm,
     };
 }
 
-void RegionOverlay::changeListenerCallback(juce::ChangeBroadcaster*)
+RegionOverlay::~RegionOverlay()
 {
-    repaint();
+    // Clear the regions-changed callback to prevent dangling lambda
+    // during destruction (m_regionManager outlives this overlay)
+    m_regionManager.onRegionsChanged = nullptr;
 }
 
 void RegionOverlay::paint(juce::Graphics& g)

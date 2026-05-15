@@ -90,9 +90,11 @@ void SpectrogramComponent::renderViewport(int viewWidth, int viewHeight)
     double viewDur     = totalDur / m_hZoom;
     double startTime   = m_viewOffset;
 
-    // Clamp start so we don't render past end
+    // Clamp start so we don't render past end, and sync back to m_viewOffset
     if (startTime + viewDur > totalDur)
         startTime = std::max(0.0, totalDur - viewDur);
+    if (startTime != m_viewOffset)
+        m_viewOffset = startTime;
     double endTime = startTime + viewDur;
 
     int startSample = std::clamp(static_cast<int>(startTime * sampleRate), 0, totalSamples - 1);
@@ -349,15 +351,39 @@ void SpectrogramComponent::paint(juce::Graphics& g)
 void SpectrogramComponent::mouseWheelMove(const juce::MouseEvent& e,
                                            const juce::MouseWheelDetails& w)
 {
-    if (w.deltaY == 0.0 || !m_fileManager.hasAudio()) return;
+    if (!m_fileManager.hasAudio()) return;
 
     double totalDuration = m_fileManager.getDurationSec();
+
+    // Handle horizontal scroll (deltaX from trackpad)
+    if (w.deltaX != 0.0)
+    {
+        double viewDuration = totalDuration / m_hZoom;
+        double scrollAmount = -viewDuration * 0.1 * w.deltaX;
+        double newOffset = m_viewOffset + scrollAmount;
+        double maxOffset = totalDuration - viewDuration;
+        m_viewOffset = std::clamp(newOffset, 0.0, std::max(0.0, maxOffset));
+        refreshViewport();
+        if (onUserViewChanged)
+            onUserViewChanged(m_hZoom, m_viewOffset);
+        return;
+    }
+
+    if (w.deltaY == 0.0) return;
 
     if (e.mods.isCtrlDown())
     {
         // Ctrl+wheel: fine zoom
         double factor = (w.deltaY > 0) ? 1.05 : 1.0 / 1.05;
         m_hZoom = std::max(0.1, m_hZoom * factor);
+
+        // Clamp viewOffset so view doesn't extend past audio end
+        double viewDuration = totalDuration / m_hZoom;
+        double maxOffset = totalDuration - viewDuration;
+        if (maxOffset > 0.0)
+            m_viewOffset = std::clamp(m_viewOffset, 0.0, maxOffset);
+        else
+            m_viewOffset = 0.0;
     }
     else
     {
@@ -370,6 +396,8 @@ void SpectrogramComponent::mouseWheelMove(const juce::MouseEvent& e,
     }
 
     refreshViewport();
+    if (onUserViewChanged)
+        onUserViewChanged(m_hZoom, m_viewOffset);
 }
 
 void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
@@ -385,8 +413,9 @@ void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
 
         if (posSec > rightEdge - threshold)
         {
+            double totalDur = m_fileManager.getDurationSec();
             m_viewOffset = posSec - viewDuration * 0.7;
-            m_viewOffset = std::max(0.0, m_viewOffset);
+            m_viewOffset = std::clamp(m_viewOffset, 0.0, std::max(0.0, totalDur - viewDuration));
             refreshViewport();
             return;
         }
@@ -398,5 +427,17 @@ void SpectrogramComponent::setPlaybackPosition(double posSec) noexcept
 void SpectrogramComponent::setZoom(double hZoom) noexcept
 {
     m_hZoom = std::max(0.1, hZoom);
+    refreshViewport();
+}
+
+void SpectrogramComponent::setViewOffset(double offsetSec) noexcept
+{
+    double totalDur = m_fileManager.hasAudio() ? m_fileManager.getDurationSec() : 0.0;
+    double viewDur  = totalDur / m_hZoom;
+    double maxOffset = totalDur - viewDur;
+    if (maxOffset > 0.0)
+        m_viewOffset = std::clamp(offsetSec, 0.0, maxOffset);
+    else
+        m_viewOffset = 0.0;
     refreshViewport();
 }

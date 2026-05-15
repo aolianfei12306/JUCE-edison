@@ -6,20 +6,16 @@ class AudioFileManager;
 class SelectionManager;
 class WaveformThumbnail;
 
-class RegionOverlay : public juce::Component,
-                      public juce::ChangeListener
+class RegionOverlay : public juce::Component
 {
 public:
     RegionOverlay(RegionManager& mgr, AudioFileManager& afm,
                   SelectionManager& sel, WaveformThumbnail& waveform);
-    ~RegionOverlay() override = default;
+    ~RegionOverlay() override;
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void resized() override;
-
-    // ChangeListener
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     // Callback when user clicks a region tab
     std::function<void(const RegionManager::Region&)> onRegionSelected;

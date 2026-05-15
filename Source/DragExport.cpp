@@ -17,6 +17,18 @@ void DragExport::startDragIfOverSelection(const juce::MouseEvent& /*e*/,
                                .getChildFile("OpenEdisonExport");
     exportDir.createDirectory();
 
+    // Clean up stale temp files from previous exports (keep at most 20)
+    {
+        juce::Array<juce::File> existingFiles;
+        exportDir.findChildFiles(existingFiles, juce::File::findFiles, false, "*.wav");
+        while (existingFiles.size() > 20)
+        {
+            existingFiles.removeAndReturn(0).deleteFile();
+            existingFiles = {};
+            exportDir.findChildFiles(existingFiles, juce::File::findFiles, false, "*.wav");
+        }
+    }
+
     juce::File tempFile = exportSelectionAsWav(exportDir);
 
     if (tempFile.existsAsFile())

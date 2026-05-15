@@ -12,6 +12,7 @@
 #include "LoopOverlay.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <memory>
 #include <vector>
 
 MainComponent::MainComponent()
@@ -47,6 +48,24 @@ MainComponent::MainComponent()
     m_regionOverlay = std::make_unique<RegionOverlay>(*m_regionManager, *m_fileManager, *m_selection, *m_waveform);
     m_loopManager = std::make_unique<LoopManager>();
     m_loopOverlay = std::make_unique<LoopOverlay>(*m_loopManager, *m_fileManager, *m_waveform);
+
+    // ── View sync: keep waveform and spectrogram zoom/offset in sync ──
+    // When user zooms or scrolls either view, the other view matches,
+    // ensuring marker/loop overlays (which use waveform coordinates) stay aligned.
+    m_waveform->onUserViewChanged = [this](double zoom, double offsetSec) {
+        m_spectrogram->setZoom(zoom);
+        m_spectrogram->setViewOffset(offsetSec);
+        m_spectrogram->refreshViewport();
+        m_zoomedToSelection = false;
+    };
+    m_spectrogram->onUserViewChanged = [this](double zoom, double offsetSec) {
+        m_waveform->setZoom(zoom);
+        double totalDur = m_fileManager->getDurationSec();
+        if (totalDur > 0.0)
+            m_waveform->setHorizontalOffset(offsetSec / totalDur);
+        m_waveform->repaint();
+        m_zoomedToSelection = false;
+    };
 
     m_regionOverlay->onRegionSelected = [this](const RegionManager::Region& region) {
         m_selection->setSelection(region.startTime, region.endTime);
@@ -123,6 +142,11 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdToggleLoop, juce::KeyPress('l', 0, 0));
         mappings->addKeyPress(cmdToggleSnap, juce::KeyPress('x', 0, 0));
         mappings->addKeyPress(cmdToggleGridSnap, juce::KeyPress('g', 0, 0));
+        mappings->addKeyPress(cmdFadeOut, juce::KeyPress('o', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0));
+        mappings->addKeyPress(cmdSelectAll, juce::KeyPress('a', juce::ModifierKeys::ctrlModifier, 0));
+        mappings->addKeyPress(cmdNew, juce::KeyPress('n', juce::ModifierKeys::ctrlModifier, 0));
+        mappings->addKeyPress(cmdZoomIn, juce::KeyPress('=', 0, 0));
+        mappings->addKeyPress(cmdZoomOut, juce::KeyPress('-', 0, 0));
     }
     setInterceptsMouseClicks(true, true);
 
@@ -226,7 +250,7 @@ void MainComponent::resized()
     m_spectrogram->setBounds(r);
     m_markerOverlay->setBounds(r);
     m_loopOverlay->setBounds(r);
-    m_regionOverlay->setBounds(regionBarR); // setAlwaysOnTop already set
+    // m_regionOverlay bounds set above (already in regionBarR)
 }
 
 // ── Menu ──
@@ -241,6 +265,7 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
     juce::PopupMenu menu;
     if (idx == 0)
     {
+        menu.addCommandItem(m_commandManager.get(), cmdNew);
         menu.addCommandItem(m_commandManager.get(), cmdOpen);
         menu.addCommandItem(m_commandManager.get(), cmdSaveAs);
         menu.addSeparator();
@@ -265,6 +290,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
     {
         menu.addCommandItem(m_commandManager.get(), cmdUndo);
         menu.addCommandItem(m_commandManager.get(), cmdRedo);
+        menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdSelectAll);
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdCut);
         menu.addCommandItem(m_commandManager.get(), cmdCopy);
@@ -297,14 +324,12 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addCommandItem(m_commandManager.get(), cmdToggleGridSnap);
         menu.addCommandItem(m_commandManager.get(), cmdToggleLoop);
         menu.addSeparator();
+        menu.addCommandItem(m_commandManager.get(), cmdSetBPM);
+        menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdAddMarker);
         menu.addCommandItem(m_commandManager.get(), cmdRemoveMarker);
         menu.addCommandItem(m_commandManager.get(), cmdNextMarker);
         menu.addCommandItem(m_commandManager.get(), cmdPrevMarker);
-        menu.addSeparator();
-        menu.addCommandItem(m_commandManager.get(), cmdAddRegion);
-        menu.addCommandItem(m_commandManager.get(), cmdNextRegion);
-        menu.addCommandItem(m_commandManager.get(), cmdPrevRegion);
     }
     return menu;
 }
@@ -317,20 +342,24 @@ juce::ApplicationCommandTarget* MainComponent::getNextCommandTarget() { return n
 
 void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
 {
-    cmds.addArray({ cmdOpen, cmdSaveAs, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
+    cmds.addArray({ cmdNew, cmdOpen, cmdSaveAs, cmdPlayPause, cmdStop, cmdPlaySel, cmdZoomIn,
                      cmdZoomOut, cmdToggleView, cmdUndo, cmdRedo, cmdSilence,
                      cmdReverse, cmdNormalize, cmdFadeIn, cmdFadeOut,
                      cmdAddMarker, cmdRemoveMarker, cmdNextMarker, cmdPrevMarker,
                      cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
                      cmdZoomToSelection, cmdFitAll, cmdToggleLoop, cmdToggleSnap,
-                     cmdCut, cmdCopy, cmdPaste,
-                     cmdToggleGridSnap });
+                     cmdCut, cmdCopy, cmdPaste, cmdSelectAll,
+                     cmdToggleGridSnap, cmdSetBPM });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
 {
     switch (id)
     {
+    case cmdNew:
+        info.setInfo("New Project", "Clear the current project and start fresh", "File", 0);
+        info.addDefaultKeypress('n', juce::ModifierKeys::ctrlModifier);
+        break;
     case cmdOpen:
         info.setInfo("Open...", "Open an audio file", "File", 0);
         info.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier);
@@ -351,10 +380,12 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.setInfo("Play Selection", "Play selection only", "Transport", 0);
         break;
     case cmdZoomIn:
-        info.setInfo("Zoom In", "Zoom in", "View", 0);
+        info.setInfo("Zoom In (+)", "Zoom in", "View", 0);
+        info.addDefaultKeypress('=', 0);
         break;
     case cmdZoomOut:
-        info.setInfo("Zoom Out", "Zoom out", "View", 0);
+        info.setInfo("Zoom Out (-)", "Zoom out", "View", 0);
+        info.addDefaultKeypress('-', 0);
         break;
     case cmdToggleView:
         info.setInfo("Toggle View (Ctrl+S)", "Switch between waveform and spectrogram", "View", 0);
@@ -363,10 +394,12 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdUndo:
         info.setInfo("Undo", "Undo last action", "Edit", 0);
         info.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier);
+        info.setActive(m_undoManager.canUndo());
         break;
     case cmdRedo:
         info.setInfo("Redo", "Redo last undone action", "Edit", 0);
         info.addDefaultKeypress('z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
+        info.setActive(m_undoManager.canRedo());
         break;
     case cmdSilence:
         info.setInfo("Silence Selection (Delete/Backspace)", "Set selected audio to silence", "Process", 0);
@@ -378,7 +411,7 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         break;
     case cmdNormalize:
         info.setInfo("Normalize Selection", "Normalize volume of the selected audio", "Process", 0);
-        info.addDefaultKeypress('n', juce::ModifierKeys::ctrlModifier);
+        info.addDefaultKeypress('n', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
         break;
     case cmdFadeIn:
         info.setInfo("Fade In Selection", "Fade in the selected audio", "Process", 0);
@@ -386,6 +419,7 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         break;
     case cmdFadeOut:
         info.setInfo("Fade Out Selection", "Fade out the selected audio", "Process", 0);
+        info.addDefaultKeypress('o', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier);
         break;
     case cmdAddMarker:
         info.setInfo("Add Marker (M)", "Add a marker at playhead position", "Markers", 0);
@@ -431,6 +465,9 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.setInfo("Toggle Loop (L)", "Toggle loop/cycle playback mode", "Transport", 0);
         info.addDefaultKeypress('l', 0);
         break;
+    case cmdSetBPM:
+        info.setInfo("Set BPM...", "Set the BPM and grid division", "View", 0);
+        break;
     case cmdToggleSnap:
         info.setInfo("Toggle Snap to Zero (X)", "Toggle zero crossing snapping for selection edges", "Snap", 0);
         info.addDefaultKeypress('x', 0);
@@ -444,6 +481,10 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
     case cmdCut:
         info.setInfo("Cut (Ctrl+X)", "Copy selection to clipboard and silence it", "Edit", 0);
         info.addDefaultKeypress('x', juce::ModifierKeys::ctrlModifier);
+        break;
+    case cmdSelectAll:
+        info.setInfo("Select All (Ctrl+A)", "Select the entire audio file", "Edit", 0);
+        info.addDefaultKeypress('a', juce::ModifierKeys::ctrlModifier);
         break;
     case cmdCopy:
         info.setInfo("Copy (Ctrl+C)", "Copy selection to clipboard", "Edit", 0);
@@ -461,6 +502,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
 {
     switch (info.commandID)
     {
+    case cmdNew:
+        newProject();
+        return true;
     case cmdOpen: {
         auto chooser = std::make_shared<juce::FileChooser>(
             "Select audio file", juce::File{},
@@ -485,25 +529,37 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
     case cmdPlaySel:
         m_transport->playSelection();
         return true;
-    case cmdZoomIn:
-        m_waveform->setZoom(m_waveform->getZoom() * 1.5);
+    case cmdZoomIn: {
+        const double newZoom = m_waveform->getZoom() * 1.5;
+        m_waveform->setZoom(newZoom);
         m_waveform->repaint();
+        // Sync spectrogram
+        m_spectrogram->setZoom(newZoom);
+        m_spectrogram->refreshViewport();
         return true;
-    case cmdZoomOut:
-        m_waveform->setZoom(m_waveform->getZoom() / 1.5);
+    }
+    case cmdZoomOut: {
+        const double newZoom = m_waveform->getZoom() / 1.5;
+        m_waveform->setZoom(newZoom);
         m_waveform->repaint();
+        // Sync spectrogram
+        m_spectrogram->setZoom(newZoom);
+        m_spectrogram->refreshViewport();
         return true;
+    }
     case cmdUndo:
         m_undoManager.undo();
         m_waveform->repaint();
         m_spectrogram->rebuildFromAudio();
         m_zoomedToSelection = false;
+        m_commandManager->commandStatusChanged();
         return true;
     case cmdRedo:
         m_undoManager.redo();
         m_waveform->repaint();
         m_spectrogram->rebuildFromAudio();
         m_zoomedToSelection = false;
+        m_commandManager->commandStatusChanged();
         return true;
     case cmdSilence:
         silenceSelection();
@@ -522,6 +578,13 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdCut:
         cutSelection();
+        return true;
+    case cmdSelectAll:
+        if (m_fileManager->hasAudio()) {
+            m_selection->setSelection(0.0, m_fileManager->getDurationSec());
+            m_waveform->repaint();
+            m_selectionOverlay->repaint();
+        }
         return true;
     case cmdCopy:
         copySelection();
@@ -584,6 +647,9 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdToggleGridSnap:
         toggleGridSnap();
+        return true;
+    case cmdSetBPM:
+        showBPMDialog();
         return true;
     case cmdAddRegion:
         addRegionFromSelection();
@@ -678,8 +744,11 @@ void MainComponent::zoomToSelection()
     {
         m_waveform->setZoom(m_preZoomLevel);
         m_waveform->setHorizontalOffset(m_preZoomOffset);
+        m_spectrogram->setZoom(m_preZoomLevel);
+        m_spectrogram->setViewOffset(m_preZoomOffset * m_fileManager->getDurationSec());
         m_zoomedToSelection = false;
         m_waveform->repaint();
+        m_spectrogram->repaint();
         return;
     }
 
@@ -704,8 +773,13 @@ void MainComponent::zoomToSelection()
     double offsetTime = std::max(0.0, selStart - padding * 0.3);
     m_waveform->setHorizontalOffset(offsetTime / totalDur);
 
+    // Sync spectrogram view to same zoom/offset
+    m_spectrogram->setZoom(newZoom);
+    m_spectrogram->setViewOffset(offsetTime);
+
     m_zoomedToSelection = true;
     m_waveform->repaint();
+    m_spectrogram->repaint();
 }
 
 void MainComponent::fitAll()
@@ -716,8 +790,11 @@ void MainComponent::fitAll()
     // Restore zoom to show entire file
     m_waveform->setZoom(1.0);
     m_waveform->setHorizontalOffset(0.0);
+    m_spectrogram->setZoom(1.0);
+    m_spectrogram->setViewOffset(0.0);
     m_zoomedToSelection = false;
     m_waveform->repaint();
+    m_spectrogram->repaint();
 }
 
 void MainComponent::toggleLoop()
@@ -846,6 +923,7 @@ void MainComponent::silenceSelection()
     };
 
     m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
 }
 
 void MainComponent::reverseSelection()
@@ -889,6 +967,7 @@ void MainComponent::reverseSelection()
     };
 
     m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
 }
 
 void MainComponent::normalizeSelection()
@@ -943,6 +1022,7 @@ void MainComponent::normalizeSelection()
     };
 
     m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
 }
 
 void MainComponent::fadeSelectionIn()
@@ -989,6 +1069,7 @@ void MainComponent::fadeSelectionIn()
     };
 
     m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
 }
 
 void MainComponent::fadeSelectionOut()
@@ -1035,6 +1116,34 @@ void MainComponent::fadeSelectionOut()
     };
 
     m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
+}
+
+void MainComponent::newProject()
+{
+    m_transport->stop();
+    m_fileManager->unload();
+    m_selection->clearSelection();
+    m_markerManager->clear();
+    m_regionManager->clear();
+    m_loopManager->clearLoop();
+    m_undoManager.clearUndoHistory();
+    m_zoomedToSelection = false;
+    m_preZoomLevel = 1.0;
+    m_preZoomOffset = 0.0;
+    m_clipboardBuffer = nullptr;
+
+    m_waveform->setZoom(1.0);
+    m_waveform->setHorizontalOffset(0.0);
+    m_waveform->setVerticalZoom(1.0);
+    m_spectrogram->setZoom(1.0);
+    m_spectrogram->setViewOffset(0.0);
+    m_spectrogram->clear();
+
+    if (auto* peer = getPeer())
+        peer->setTitle("Open Edison");
+
+    repaint();
 }
 
 void MainComponent::toggleSnapToZero()
@@ -1050,6 +1159,80 @@ void MainComponent::toggleGridSnap()
     m_gridOverlay->setVisible(m_viewMode == WaveformView && m_gridManager->isEnabled());
     m_gridOverlay->repaint();
     repaint();
+}
+
+void MainComponent::showBPMDialog()
+{
+    double currentBPM = m_gridManager->getBPM();
+    int currentDiv = m_gridManager->getDivision();
+
+    // Capture values with shared_ptr to survive the dialog's anonymous lifetime
+    auto resultBPM = std::make_shared<double>(currentBPM);
+    auto resultDiv = std::make_shared<int>(currentDiv);
+
+    auto* dialog = new juce::DialogWindow(
+        "Set Grid BPM",
+        juce::Colour(0xFF252540),
+        true,  // close button
+        true   // modal
+    );
+
+    auto* content = new juce::Component();
+    content->setSize(300, 120);
+
+    auto* bpmLabel = new juce::Label("bpmLabel", "BPM:");
+    bpmLabel->setBounds(10, 10, 50, 22);
+    content->addAndMakeVisible(bpmLabel);
+
+    auto* bpmEditor = new juce::TextEditor("bpm");
+    bpmEditor->setBounds(65, 10, 100, 22);
+    bpmEditor->setText(juce::String(currentBPM, 1), false);
+    bpmEditor->setInputRestrictions(6, "0123456789.");
+    content->addAndMakeVisible(bpmEditor);
+
+    auto* divLabel = new juce::Label("divLabel", "Division:");
+    divLabel->setBounds(180, 10, 55, 22);
+    content->addAndMakeVisible(divLabel);
+
+    auto* divEditor = new juce::TextEditor("div");
+    divEditor->setBounds(240, 10, 50, 22);
+    divEditor->setText(juce::String(currentDiv), false);
+    divEditor->setInputRestrictions(2, "123456789");
+    content->addAndMakeVisible(divEditor);
+
+    auto* okBtn = new juce::TextButton("OK");
+    okBtn->setBounds(80, 50, 60, 28);
+    content->addAndMakeVisible(okBtn);
+
+    auto* cancelBtn = new juce::TextButton("Cancel");
+    cancelBtn->setBounds(160, 50, 60, 28);
+    content->addAndMakeVisible(cancelBtn);
+
+    // Capture values before calling exitModalState (dialog deletes content after)
+    okBtn->onClick = [dialog, resultBPM, resultDiv, bpmEditor, divEditor, this]() {
+        *resultBPM = bpmEditor->getText().getDoubleValue();
+        *resultDiv = divEditor->getText().getIntValue();
+        // Apply immediately while dialog/editors are still alive
+        if (*resultBPM >= 20.0 && *resultBPM <= 500.0 && *resultDiv >= 1 && *resultDiv <= 32)
+        {
+            m_gridManager->setBPM(*resultBPM);
+            m_gridManager->setDivision(*resultDiv);
+            m_gridOverlay->repaint();
+            m_transport->repaint();
+            repaint();
+        }
+        dialog->exitModalState(1);
+    };
+    cancelBtn->onClick = [dialog]() {
+        dialog->exitModalState(0);
+    };
+
+    dialog->setContentOwned(content, true);
+    dialog->centreAroundComponent(this, getWidth(), getHeight());
+    dialog->setVisible(true);
+    // enterModalState with deleteWhenDismissed=true: JUKE deletes the DialogWindow
+    // (and its owned content) when exitModalState() is called
+    dialog->enterModalState(true, nullptr, true);
 }
 
 void MainComponent::saveAudioAs()
@@ -1111,12 +1294,18 @@ void MainComponent::loadAudioFile(const juce::File& file)
     m_regionManager->clear();
     m_loopManager->clearLoop();
     m_undoManager.clearUndoHistory();
+    m_zoomedToSelection = false;
+    m_preZoomLevel = 1.0;
+    m_preZoomOffset = 0.0;
 
     if (m_fileManager->loadFile(file))
     {
         m_selection->setTotalDuration(m_fileManager->getDurationSec());
         if (auto* thumb = m_fileManager->getThumbnail())
+        {
+            thumb->removeChangeListener(this);
             thumb->addChangeListener(this);
+        }
 
         m_transport->setPosition(0.0);
         m_markerOverlay->setTotalDuration(m_fileManager->getDurationSec());
@@ -1200,4 +1389,5 @@ void MainComponent::pasteClipboard()
     };
 
     m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_dsp/juce_dsp.h>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -22,8 +23,15 @@ public:
 
     void setZoom(double hZoom) noexcept;
     double getZoom() const noexcept { return m_hZoom; }
-    void setViewOffset(double offsetSec) noexcept { m_viewOffset = offsetSec; refreshViewport(); }
+    void setViewOffset(double offsetSec) noexcept;
     double getViewOffset() const noexcept { return m_viewOffset; }
+    void refreshViewport();
+
+    /** Callback fired when user manually zooms or scrolls via mouse wheel.
+     *  Reports the effective zoom factor and offset-in-seconds.
+     *  MainComponent uses this to keep the waveform view in sync.
+     */
+    std::function<void(double zoom, double offsetSec)> onUserViewChanged;
 
 private:
     /** Render spectrogram for current viewport at given pixel dimensions.
@@ -33,9 +41,6 @@ private:
      *  long audio files.
      */
     void renderViewport(int viewWidth, int viewHeight);
-
-    /** Mark viewport image as dirty and schedule repaint. */
-    void refreshViewport();
 
     static float hannWindow(int n, int N);
     static juce::Colour magnitudeToColour(float dB, float maxDB);

@@ -124,17 +124,37 @@ cmake --build build
 | 快捷键 | 功能 |
 |--------|------|
 | **空格** | 播放 / 暂停 |
+| **Escape** | 停止播放，回到起点 |
 | **Ctrl+O** | 打开音频文件 |
+| **Ctrl+Shift+S** | 保存为 WAV (Save As) |
+| **Ctrl+N** | 新建项目 |
 | **Ctrl+Z** | 撤销 |
 | **Ctrl+Shift+Z** | 重做 |
+| **Ctrl+X** | 剪切选区 |
+| **Ctrl+C** | 复制选区 |
+| **Ctrl+V** | 粘贴剪贴板 |
+| **Ctrl+A** | 全选整个音频 |
+| **Ctrl+D** | 静音选区 |
 | **Delete / Backspace** | 静音选区 |
+| **Ctrl+R** | 反向选区 |
+| **Ctrl+Shift+N** | 归一化选区 |
+| **Ctrl+I** | 选区淡入 |
+| **Ctrl+Shift+O** | 选区淡出 |
 | **Z** | 缩放到选区 |
 | **Ctrl+Shift+F** | 适应全部波形 |
+| **=** | 放大 |
+| **-** | 缩小 |
+| **Ctrl+S** | 切换波形/频谱视图 |
+| **L** | 切换循环/AB 复读 |
 | **X** | 切换零交叉吸附 |
 | **G** | 切换网格吸附 |
 | **M** | 添加标记/提示点 |
 | **Shift+M** | 删除当前标记 |
 | **[ / ]** | 上一个 / 下一个标记 |
+| **Ctrl+Shift+R** | 从选区添加 Region |
+| **Shift+Backspace** | 删除当前 Region |
+| **Ctrl+Tab** | 下一个 Region |
+| **Ctrl+Shift+Tab** | 上一个 Region |
 | **Alt+拖拽** | 选区拖拽导出 WAV |
 
 ---

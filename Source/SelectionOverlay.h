@@ -28,6 +28,7 @@ private:
 
     DragMode m_dragMode = DragMode::None;
     double   m_dragStartTime = 0.0;
+    bool     m_exportFired = false;
     SelectionManager& m_selection;
     WaveformThumbnail& m_thumbnail;
     AudioFileManager&  m_fileManager;
