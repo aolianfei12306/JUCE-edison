@@ -12,10 +12,10 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P4++++++++++++++++++++ edison-advance 九轮审计（代码审查 + Edison 功能完整性审核） |
-| **完成度** | ~99.9% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅, P4+++ 审计修复: ✅, P4++++ 审计修复: ✅, P4+++++ 审计修复: ✅, P4++++++ 审计修复: ✅, P4+++++++ 审计修复: ✅, P4++++++++ 审计修复: ✅, P4+++++++++ 九轮审计修复: ✅, P4++++++++++ 十轮审计修复: ✅, P4+++++++++++ edison-advance 审计: ✅, P4++++++++++++ edison-advance 二次审计: ✅, P4+++++++++++++ edison-advance 三次审计: ✅, P4++++++++++++++ edison-advance 四轮审计: ✅, P4+++++++++++++++ edison-advance 五轮审计: ✅, P4++++++++++++++++ edison-advance 六轮审计: ✅, P4+++++++++++++++ edison-advance 七轮审计: ✅, P4+++++++++++++++++ edison-advance 八轮审计: ✅, P4++++++++++++++++++ edison-advance 九轮审计: ✅) |
+| **阶段** | P4++++++++++++++++++++ edison-advance 十轮审计（基础功能审计+修复） |
+| **完成度** | ~99.9% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅, P4+++ 审计修复: ✅, P4++++ 审计修复: ✅, P4+++++ 审计修复: ✅, P4++++++ 审计修复: ✅, P4+++++++ 审计修复: ✅, P4++++++++ 审计修复: ✅, P4+++++++++ 九轮审计修复: ✅, P4++++++++++ 十轮审计修复: ✅, P4+++++++++++ edison-advance 审计: ✅, P4++++++++++++ edison-advance 二次审计: ✅, P4+++++++++++++ edison-advance 三次审计: ✅, P4++++++++++++++ edison-advance 四轮审计: ✅, P4+++++++++++++++ edison-advance 五轮审计: ✅, P4++++++++++++++++ edison-advance 六轮审计: ✅, P4+++++++++++++++ edison-advance 七轮审计: ✅, P4+++++++++++++++++ edison-advance 八轮审计: ✅, P4++++++++++++++++++ edison-advance 九轮审计: ✅, P4+++++++++++++++++++ edison-advance 十轮审计: ✅) |
 | **LOC** | ~4,600 行（31 个源文件） |
-| **最后更新** | 2026-05-15 09:49 CST |
+| **最后更新** | 2026-05-15 10:19 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -55,6 +55,49 @@
 | 2026-05-15 | edison-advance 七轮审计 | Duplicate ChangeListener 注册修复（每次 loadAudioFile 重复添加 thumb listener）+ TransportBar stop 后 stale callAsync 位置回写修复 | ✅ |
 | 2026-05-15 | edison-advance 八轮审计 | 代码审计 + Edison 功能完整性审核；验证七轮修复；发现死变量/对齐/m_readIndex 溢出；更新缺失功能优先清单 | ✅ |
 | 2026-05-15 | edison-advance 九轮审计 | TransportBar 死变量 selInfoArea 清理、RegionOverlay ~析构函数清理 onRegionsChanged 避免悬挂、Spectrogram renderViewport m_viewOffset 同步回写、setPlaybackPosition 上限钳位、DragExport 临时文件清理（最多保留20个） | ✅ |
+| 2026-05-15 | edison-advance 十轮审计 | newProject/loadAudioFile 清空 Undo 历史后未刷新菜单状态 Bug 修复（commandStatusChanged 遗漏） | ✅ |
+
+## 审计报告 (2026-05-15 十轮审计)
+
+### 发现的问题
+
+| # | 问题 | 严重度 | 状态 |
+|---|------|--------|------|
+| 1 | **newProject() 清空 Undo 历史后未刷新 Undo/Redo 菜单状态** — `m_undoManager.clearUndoHistory()` 在执行后 Undo/Redo 栈变为空，但未调用 `m_commandManager->commandStatusChanged()`。菜单中 Undo/Redo 项继续显示为可用（active）状态，误导用户。 | **低** | ✅ 已修复 — 在 `clearUndoHistory()` 后添加 `commandStatusChanged()` |
+| 2 | **loadAudioFile() 同样遗漏 commandStatusChanged()** — 加载新文件后 Undo 历史被清空，但菜单状态未同步更新。 | **低** | ✅ 已修复 |
+
+### 功能完整性审计 — 对比 FL Studio Edison v21
+
+| Edison 功能 | Open Edison | 备注 |
+|-------------|-------------|------|
+| 波形显示（多声道/缩放） | ✅ | 垂直+水平缩放 |
+| 选区（创建/拖动/吸附） | ✅ | 零交叉+网格吸附 |
+| 选区处理（静音/反向/标准化/淡入淡出） | ✅ | Undo 支持 |
+| 复制/剪切/粘贴 | ✅ | 内部剪贴板 |
+| 频谱/声谱图 | ✅ | 视口驱动 STFT，任意时长 |
+| 标记/提示点 | ✅ | M/Shift+M/[ / ] |
+| Region（块）管理 | ✅ | 带颜色标签+右键菜单 |
+| 循环/AB 复读 | ✅ | L 键切换+半透明高亮 |
+| 录制 | ✅ | 输入设备选择 |
+| 回放自动滚动（波形） | ✅ | 跟随播放头 |
+| 回放自动滚动（频谱） | ✅ | 已有功能 |
+| 缩放至选区 | ✅ | Z 键切换/恢复 |
+| 拖拽导出 WAV | ✅ | Alt+选区拖动 |
+| Save As | ✅ | Ctrl+Shift+S |
+| Escape 停止 | ✅ | 停止+复位 |
+| New Project | ✅ | Ctrl+N |
+| Select All | ✅ | Ctrl+A |
+| **Ripple Delete（删除+拉移）** | ❌ | 当前仅静音，P5 高优先级 |
+| **Trim/Crop (Ctrl+T)** | ❌ | P5 高优先级 |
+| 时间尺/刻度标尺 | ❌ | 计划中 |
+| 音量/增益实时控制 | ❌ | 计划中 |
+| 电平表 | ❌ | 计划中 |
+| 相位翻转 | ❌ | 低优先级 |
+| DC 偏移移除 | ❌ | 低优先级 |
+| 选区扩展（Shift+方向键） | ❌ | 未实现 |
+| F2 重命名 Region | ❌ | 未实现 |
+| Loop 录音（多 take） | ❌ | 未实现 |
+| 时间伸缩/变调 | ❌ | 高级功能 |
 
 ## 审计报告 (2026-05-15 七轮审计)
 

@@ -1128,6 +1128,7 @@ void MainComponent::newProject()
     m_regionManager->clear();
     m_loopManager->clearLoop();
     m_undoManager.clearUndoHistory();
+    m_commandManager->commandStatusChanged();
     m_zoomedToSelection = false;
     m_preZoomLevel = 1.0;
     m_preZoomOffset = 0.0;
@@ -1294,6 +1295,7 @@ void MainComponent::loadAudioFile(const juce::File& file)
     m_regionManager->clear();
     m_loopManager->clearLoop();
     m_undoManager.clearUndoHistory();
+    m_commandManager->commandStatusChanged();
     m_zoomedToSelection = false;
     m_preZoomLevel = 1.0;
     m_preZoomOffset = 0.0;
