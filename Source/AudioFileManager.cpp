@@ -52,6 +52,67 @@ double AudioFileManager::getDurationSec() const noexcept
     return static_cast<double>(m_buffer->getNumSamples()) / m_sampleRate;
 }
 
+int AudioFileManager::removeRange(int startSample, int numSamples)
+{
+    if (!hasAudio() || m_buffer == nullptr || startSample < 0 || numSamples <= 0)
+        return 0;
+
+    const int totalSamples = m_buffer->getNumSamples();
+    if (startSample >= totalSamples)
+        return 0;
+
+    // Clamp to buffer bounds
+    const int safeNum = juce::jmin(numSamples, totalSamples - startSample);
+    if (safeNum <= 0)
+        return 0;
+
+    const int newTotalSamples = totalSamples - safeNum;
+    const int numChannels = m_buffer->getNumChannels();
+    const int remainingSamples = totalSamples - (startSample + safeNum);
+
+    if (remainingSamples > 0)
+    {
+        // Shift remaining audio left
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* buf = m_buffer->getWritePointer(ch);
+            std::copy(buf + startSample + safeNum,
+                      buf + totalSamples,
+                      buf + startSample);
+        }
+    }
+
+    // Shrink the buffer
+    m_buffer->setSize(numChannels, newTotalSamples, false, false, true);
+
+    // Update thumbnail
+    m_thumbnail->clear();
+    if (m_buffer->getNumSamples() > 0)
+    {
+        m_thumbnail->reset(numChannels, m_sampleRate, m_buffer->getNumSamples());
+        m_thumbnail->addBlock(0, *m_buffer, 0, m_buffer->getNumSamples());
+    }
+
+    return safeNum;
+}
+
+void AudioFileManager::replaceBuffer(std::unique_ptr<juce::AudioBuffer<float>> newBuffer)
+{
+    jassert(newBuffer != nullptr);
+    if (newBuffer == nullptr)
+        return;
+
+    m_buffer = std::move(newBuffer);
+
+    // Update thumbnail
+    m_thumbnail->clear();
+    if (m_buffer->getNumSamples() > 0)
+    {
+        m_thumbnail->reset(m_buffer->getNumChannels(), m_sampleRate, m_buffer->getNumSamples());
+        m_thumbnail->addBlock(0, *m_buffer, 0, m_buffer->getNumSamples());
+    }
+}
+
 double AudioFileManager::snapToZeroCrossing(double timeSec, int maxSearchSamples) const noexcept
 {
     if (!hasAudio() || m_buffer == nullptr || m_sampleRate <= 0.0)

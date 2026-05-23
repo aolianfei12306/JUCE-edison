@@ -52,3 +52,39 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioModifyAction)
 };
+
+//==============================================================================
+/**
+ * An UndoableAction that removes (ripple-deletes) a range of samples from the
+ * audio buffer and shifts subsequent audio left. Saves the full pre-edit buffer
+ * so undo can completely restore the original state.
+ *
+ * Used by: Delete/Backspace ripple delete, Crop (keep selection, remove rest).
+ */
+class BufferSizeChangeAction : public juce::UndoableAction
+{
+public:
+    /** Mode: RIPPLE_DELETE removes start..start+num from buffer, shifting rest left.
+     *        CROP retains only start..start+num, removing everything else. */
+    enum class Mode { RIPPLE_DELETE, CROP };
+
+    BufferSizeChangeAction(AudioFileManager& mgr,
+                           int startSample,
+                           int numSamples,
+                           Mode mode);
+
+    bool perform() override;
+    bool undo() override;
+    int getSizeInUnits() override { return static_cast<int>(sizeof(*this)); }
+
+    std::function<void()> onAudioChanged;
+
+private:
+    AudioFileManager& m_manager;
+    int m_startSample;
+    int m_numSamples;
+    Mode m_mode;
+    std::unique_ptr<juce::AudioBuffer<float>> m_savedBuffer;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BufferSizeChangeAction)
+};

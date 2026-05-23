@@ -123,8 +123,9 @@ MainComponent::MainComponent()
         mappings->addKeyPress(cmdOpen, juce::KeyPress('o', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdPlayPause, juce::KeyPress(juce::KeyPress::spaceKey, 0, 0));
         mappings->addKeyPress(cmdToggleView, juce::KeyPress('s', juce::ModifierKeys::ctrlModifier, 0));
-        mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::deleteKey, 0, 0));
-        mappings->addKeyPress(cmdSilence, juce::KeyPress(juce::KeyPress::backspaceKey, 0, 0));
+        mappings->addKeyPress(cmdRippleDelete, juce::KeyPress(juce::KeyPress::deleteKey, 0, 0));
+        mappings->addKeyPress(cmdRippleDelete, juce::KeyPress(juce::KeyPress::backspaceKey, 0, 0));
+        mappings->addKeyPress(cmdCrop, juce::KeyPress('t', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdStop, juce::KeyPress(juce::KeyPress::escapeKey, 0, 0));
         mappings->addKeyPress(cmdCut, juce::KeyPress('x', juce::ModifierKeys::ctrlModifier, 0));
         mappings->addKeyPress(cmdCopy, juce::KeyPress('c', juce::ModifierKeys::ctrlModifier, 0));
@@ -300,6 +301,8 @@ juce::PopupMenu MainComponent::getMenuForIndex(int idx, const juce::String&)
         menu.addCommandItem(m_commandManager.get(), cmdPlaySel);
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdSilence);
+        menu.addCommandItem(m_commandManager.get(), cmdRippleDelete);
+        menu.addCommandItem(m_commandManager.get(), cmdCrop);
         menu.addSeparator();
         menu.addCommandItem(m_commandManager.get(), cmdReverse);
         menu.addCommandItem(m_commandManager.get(), cmdNormalize);
@@ -349,7 +352,8 @@ void MainComponent::getAllCommands(juce::Array<juce::CommandID>& cmds)
                      cmdAddRegion, cmdRemoveRegion, cmdNextRegion, cmdPrevRegion,
                      cmdZoomToSelection, cmdFitAll, cmdToggleLoop, cmdToggleSnap,
                      cmdCut, cmdCopy, cmdPaste, cmdSelectAll,
-                     cmdToggleGridSnap, cmdSetBPM });
+                     cmdToggleGridSnap, cmdSetBPM,
+                     cmdRippleDelete, cmdCrop });
 }
 
 void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandInfo& info)
@@ -402,7 +406,7 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.setActive(m_undoManager.canRedo());
         break;
     case cmdSilence:
-        info.setInfo("Silence Selection (Delete/Backspace)", "Set selected audio to silence", "Process", 0);
+        info.setInfo("Silence Selection (Ctrl+D)", "Set selected audio to silence (Ctrl+D; Delete/Backspace now ripple deletes)", "Process", 0);
         info.addDefaultKeypress('d', juce::ModifierKeys::ctrlModifier);
         break;
     case cmdReverse:
@@ -494,6 +498,14 @@ void MainComponent::getCommandInfo(juce::CommandID id, juce::ApplicationCommandI
         info.setInfo("Paste (Ctrl+V)", "Paste clipboard content at playhead", "Edit", 0);
         info.addDefaultKeypress('v', juce::ModifierKeys::ctrlModifier);
         break;
+    case cmdRippleDelete:
+        info.setInfo("Ripple Delete (Delete/Backspace)", "Remove selected audio and shift remaining audio left", "Edit", 0);
+        info.addDefaultKeypress(juce::KeyPress::deleteKey, 0);
+        break;
+    case cmdCrop:
+        info.setInfo("Crop (Ctrl+T)", "Keep only the selected audio, remove all other audio", "Edit", 0);
+        info.addDefaultKeypress('t', juce::ModifierKeys::ctrlModifier);
+        break;
     default: break;
     }
 }
@@ -575,6 +587,12 @@ bool MainComponent::perform(const juce::ApplicationCommandTarget::InvocationInfo
         return true;
     case cmdFadeOut:
         fadeSelectionOut();
+        return true;
+    case cmdRippleDelete:
+        rippleDeleteSelection();
+        return true;
+    case cmdCrop:
+        cropSelection();
         return true;
     case cmdCut:
         cutSelection();
@@ -1113,6 +1131,93 @@ void MainComponent::fadeSelectionOut()
         m_waveform->repaint();
         if (m_viewMode == SpectrogramView)
             m_spectrogram->rebuildFromAudio();
+    };
+
+    m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
+}
+
+void MainComponent::rippleDeleteSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr || buf->getNumSamples() == 0)
+        return;
+
+    double sr = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto* action = new BufferSizeChangeAction(
+        *m_fileManager, startSample, numSamples,
+        BufferSizeChangeAction::Mode::RIPPLE_DELETE);
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        m_selectionOverlay->repaint();
+        m_markerOverlay->repaint();
+        m_loopOverlay->repaint();
+        m_gridOverlay->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+        // Clear selection since the audio data has changed
+        m_selection->clearSelection();
+    };
+
+    m_undoManager.perform(action);
+    m_commandManager->commandStatusChanged();
+}
+
+void MainComponent::cropSelection()
+{
+    if (!m_fileManager->hasAudio() || !m_selection->hasSelection())
+        return;
+
+    auto* buf = m_fileManager->getBuffer();
+    if (buf == nullptr || buf->getNumSamples() == 0)
+        return;
+
+    double sr = m_fileManager->getSampleRate();
+    auto startTime  = m_selection->getSelectionStart();
+    auto endTime    = m_selection->getSelectionEnd();
+    int startSample = static_cast<int>(std::round(startTime * sr));
+    int endSample   = static_cast<int>(std::round(endTime * sr));
+    int numSamples  = endSample - startSample;
+
+    if (numSamples <= 0)
+        return;
+
+    startSample = juce::jlimit(0, buf->getNumSamples() - 1, startSample);
+    numSamples  = juce::jmin(numSamples, buf->getNumSamples() - startSample);
+
+    auto* action = new BufferSizeChangeAction(
+        *m_fileManager, startSample, numSamples,
+        BufferSizeChangeAction::Mode::CROP);
+
+    action->onAudioChanged = [this]
+    {
+        m_waveform->repaint();
+        m_selectionOverlay->repaint();
+        m_markerOverlay->repaint();
+        m_loopOverlay->repaint();
+        m_gridOverlay->repaint();
+        if (m_viewMode == SpectrogramView)
+            m_spectrogram->rebuildFromAudio();
+        m_selection->clearSelection();
+        // Reset zoom and fit all after crop
+        fitAll();
     };
 
     m_undoManager.perform(action);

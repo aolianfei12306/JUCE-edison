@@ -96,6 +96,8 @@ public:
         cmdCut                = 0x2001,
         cmdCopy               = 0x2002,
         cmdPaste              = 0x2003,
+        cmdRippleDelete        = 0x2004,
+        cmdCrop                = 0x2005,
     };
 
     void newProject();
@@ -115,6 +117,8 @@ public:
     void toggleSnapToZero();
     void toggleGridSnap();
     void showBPMDialog();
+    void rippleDeleteSelection();
+    void cropSelection();
 
 private:
     std::unique_ptr<SelectionManager>    m_selection;

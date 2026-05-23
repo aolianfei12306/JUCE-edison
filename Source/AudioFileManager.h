@@ -31,6 +31,17 @@ public:
     const juce::String& getFileName() const noexcept { return m_fileName; }
     const juce::File&   getFile()     const noexcept { return m_file; }
 
+    /** Remove a range of samples from the buffer and shift remaining samples left.
+     *  The buffer shrinks by (numSamples) samples.
+     *  Returns the number of samples actually removed (may be less if range exceeds bounds).
+     */
+    int removeRange(int startSample, int numSamples);
+
+    /** Replace the entire audio buffer with a new one (used for undo).
+     *  Takes ownership of the given buffer.
+     */
+    void replaceBuffer(std::unique_ptr<juce::AudioBuffer<float>> newBuffer);
+
     /** Find the nearest zero crossing to a given time position.
      *  Searches forward and backward within maxSearchSamples from the given time.
      *  Returns the time of the nearest zero crossing (sub-sample interpolated),

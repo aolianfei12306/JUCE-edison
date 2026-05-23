@@ -91,6 +91,7 @@ TransportBar::TransportBar(AudioFileManager& fileManager, SelectionManager& sele
     addAndMakeVisible(m_stopBtn);
     addAndMakeVisible(m_recordBtn);
     addAndMakeVisible(m_progress);
+    addAndMakeVisible(m_gainSlider);
 
     m_playBtn.onClick   = [this] { play(); };
     m_pauseBtn.onClick  = [this] { pause(); };
@@ -105,6 +106,18 @@ TransportBar::TransportBar(AudioFileManager& fileManager, SelectionManager& sele
     m_progress.onValueChange = [this] {
         if (m_fileManager.hasAudio())
             setPosition(m_progress.getValue() * m_fileManager.getDurationSec());
+    };
+
+    // Gain slider
+    m_gainSlider.setRange(0.0, 3.0, 0.01);
+    m_gainSlider.setValue(1.0, juce::dontSendNotification);
+    m_gainSlider.setTooltip("Gain: 1.00");
+    m_gainSlider.setScrollWheelEnabled(false);
+    m_gainSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    m_gainSlider.onValueChange = [this] {
+        float g = static_cast<float>(m_gainSlider.getValue());
+        m_gain.store(g, std::memory_order_relaxed);
+        m_gainSlider.setTooltip("Gain: " + juce::String(g, 2));
     };
 
     startTimerHz(30);
@@ -130,7 +143,14 @@ void TransportBar::resized()
     r.removeFromLeft(4);
 
     // Reserve 200px for selection info text (left of progress bar, after buttons)
-    r.removeFromRight(juce::jmin(infoWidth, r.getWidth()));
+    // Place gain slider in the right info area, before the time/file info
+    auto rightArea = r.removeFromRight(juce::jmin(infoWidth, r.getWidth()));
+
+    // Gain slider takes the bottom portion of the right area
+    auto gainArea = rightArea.removeFromBottom(16);
+    m_gainSlider.setBounds(gainArea.reduced(2, 0));
+
+    // Selection info area takes 200px
     r.removeFromLeft(200);
     m_progress.setBounds(r);
 }
@@ -142,6 +162,7 @@ void TransportBar::updateButtonStates()
     m_pauseBtn.setEnabled(m_state == State::Playing);
     m_stopBtn.setEnabled(m_state != State::Stopped);
     m_progress.setEnabled(hasAudio);
+    m_gainSlider.setEnabled(hasAudio);
     m_recordBtn.setIcon(isRecording() ? TransportIconButton::Icon::RecordStop
                                       : TransportIconButton::Icon::Record);
 }
@@ -227,7 +248,7 @@ void TransportBar::paint(juce::Graphics& g)
     g.setFont(12.0f);
     g.drawText(fmt(m_position) + " / " + fmt(total), rightPanel.removeFromTop(16), juce::Justification::centredLeft);
 
-    // Draw file info (Row 2 of right panel)
+    // Draw file info (Row 2 of right panel — above the gain slider)
     if (m_fileManager.hasAudio()) {
         juce::String info;
         info += juce::String(m_fileManager.getSampleRate(), 0) + " Hz";
@@ -239,6 +260,14 @@ void TransportBar::paint(juce::Graphics& g)
         g.setFont(10.0f);
         g.drawText(info, rightPanel, juce::Justification::centredLeft);
     }
+
+    // Draw Gain label above the gain slider in the right panel bottom area
+    g.setColour(juce::Colour(0x99A0A0B0));
+    g.setFont(9.0f);
+    float gainVal = m_gain.load(std::memory_order_relaxed);
+    auto gainLabelArea = getLocalBounds().removeFromBottom(16).removeFromRight(380).reduced(4, 0);
+    g.drawText("G:" + juce::String(gainVal, 2),
+               gainLabelArea, juce::Justification::centredRight);
 
     // Selection info: draw directly in the dedicated 200px area between buttons and progress bar
     // Buttons occupy ~124px (4 × 30 + 4 gap + 2×2 inset padding)
@@ -414,6 +443,11 @@ void TransportBar::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferT
             bufferToFill.buffer->clear(ch, s, 1);
         ++m_readIndex;
     }
+
+    // Apply gain
+    float gain = m_gain.load(std::memory_order_relaxed);
+    if (gain != 1.0f)
+        bufferToFill.buffer->applyGain(gain);
 
     double newPos = static_cast<double>(m_readIndex.load()) / m_sampleRate;
 

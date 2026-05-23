@@ -12,10 +12,10 @@
 
 | 项目 | 值 |
 |------|-----|
-| **阶段** | P4++++++++++++++++++++ edison-advance 十轮审计（基础功能审计+修复） |
-| **完成度** | ~99.9% (P0: 100%, P1: 100%, P2: 100%, P3: 100%, P4: 100%, P4+ 审计修复: ✅, P4++ 审计修复: ✅, P4+++ 审计修复: ✅, P4++++ 审计修复: ✅, P4+++++ 审计修复: ✅, P4++++++ 审计修复: ✅, P4+++++++ 审计修复: ✅, P4++++++++ 审计修复: ✅, P4+++++++++ 九轮审计修复: ✅, P4++++++++++ 十轮审计修复: ✅, P4+++++++++++ edison-advance 审计: ✅, P4++++++++++++ edison-advance 二次审计: ✅, P4+++++++++++++ edison-advance 三次审计: ✅, P4++++++++++++++ edison-advance 四轮审计: ✅, P4+++++++++++++++ edison-advance 五轮审计: ✅, P4++++++++++++++++ edison-advance 六轮审计: ✅, P4+++++++++++++++ edison-advance 七轮审计: ✅, P4+++++++++++++++++ edison-advance 八轮审计: ✅, P4++++++++++++++++++ edison-advance 九轮审计: ✅, P4+++++++++++++++++++ edison-advance 十轮审计: ✅) |
-| **LOC** | ~4,600 行（31 个源文件） |
-| **最后更新** | 2026-05-15 10:19 CST |
+| **阶段** | P5 — 涟漪删除(Ripple Delete)、裁剪(Crop)、增益控制(Gain) |
+| **完成度** | ~99.95% (P0-P4: 100%, 十轮审计: ✅, P5: Ripple Delete ✅, Crop ✅, Gain Control ✅) |
+| **LOC** | ~5,000 行（32 个源文件） |
+| **最后更新** | 2026-05-23 23:35 CST |
 | **技术栈** | JUCE 8 + C++20 + CMake |
 | **目标平台** | Windows（优先）/ Linux |
 
@@ -56,6 +56,9 @@
 | 2026-05-15 | edison-advance 八轮审计 | 代码审计 + Edison 功能完整性审核；验证七轮修复；发现死变量/对齐/m_readIndex 溢出；更新缺失功能优先清单 | ✅ |
 | 2026-05-15 | edison-advance 九轮审计 | TransportBar 死变量 selInfoArea 清理、RegionOverlay ~析构函数清理 onRegionsChanged 避免悬挂、Spectrogram renderViewport m_viewOffset 同步回写、setPlaybackPosition 上限钳位、DragExport 临时文件清理（最多保留20个） | ✅ |
 | 2026-05-15 | edison-advance 十轮审计 | newProject/loadAudioFile 清空 Undo 历史后未刷新菜单状态 Bug 修复（commandStatusChanged 遗漏） | ✅ |
+| 2026-05-23 | P5 — Volume/Gain | TransportBar 增益滑块，实时调整回放音量 0x–3x，线程安全 atomic float | ✅ |
+| 2026-05-23 | P5 — Ripple Delete | Delete/Backspace 涟漪删除（删除选区+拉移后续音频），BufferSizeChangeAction 完整 Undo | ✅ |
+| 2026-05-23 | P5 — Crop | Ctrl+T 裁剪（保留选区，删除选区外音频），BufferSizeChangeAction 完整 Undo | ✅ |
 
 ## 审计报告 (2026-05-15 十轮审计)
 
@@ -87,10 +90,10 @@
 | Escape 停止 | ✅ | 停止+复位 |
 | New Project | ✅ | Ctrl+N |
 | Select All | ✅ | Ctrl+A |
-| **Ripple Delete（删除+拉移）** | ❌ | 当前仅静音，P5 高优先级 |
-| **Trim/Crop (Ctrl+T)** | ❌ | P5 高优先级 |
+| **Ripple Delete（删除+拉移）** | ✅ | Delete/Backspace 涟漪删除，BufferSizeChangeAction 完整 Undo |
+| **Trim/Crop (Ctrl+T)** | ✅ | Ctrl+T 裁剪，BufferSizeChangeAction 完整 Undo |
 | 时间尺/刻度标尺 | ❌ | 计划中 |
-| 音量/增益实时控制 | ❌ | 计划中 |
+| 音量/增益实时控制 | ✅ | TransportBar 增益滑块，0x–3x 实时调整 |
 | 电平表 | ❌ | 计划中 |
 | 相位翻转 | ❌ | 低优先级 |
 | DC 偏移移除 | ❌ | 低优先级 |
@@ -171,10 +174,10 @@
 
 | # | 功能 | 优先级 | 说明 |
 |---|------|--------|------|
-| 1 | **Ripple Delete** | **高** | Delete/Backspace = 删除选区并拉移后续音频（当前仅静音）。这是 Edison 核心行为之一 |
-| 2 | **Trim/Crop (Ctrl+T)** | **高** | 保留选区内容，删除选区外所有音频 |
+| 1 | **Ripple Delete** | **高** | ✅ 已完成 — Delete/Backspace 涟漪删除，BufferSizeChangeAction 完整 Undo |
+| 2 | **Trim/Crop (Ctrl+T)** | **高** | ✅ 已完成 — Ctrl+T 裁剪，BufferSizeChangeAction 完整 Undo |
 | 3 | **时间尺/刻度标尺** | 中 | 波形上方显示秒/小节刻度参考线 |
-| 4 | **音量/增益实时控制** | 中 | TransportBar 添加增益滑块 |
+| 4 | **音量/增益实时控制** | 中 | ✅ 已完成 — TransportBar 增益滑块，0x–3x 实时调整 |
 | 5 | **相位翻转** | 低 | 选区/全文件相位反转（乘以 -1） |
 | 6 | **DC 偏移移除** | 低 | 自动化移除直流偏移 |
 | 7 | **电平表** | 低 | 播放时显示实时电平 |
@@ -186,10 +189,10 @@
 
 | Edison 功能 | Open Edison | 备注 |
 |-------------|-------------|------|
-| Ripple Delete (删除+拉移) | ❌ | 当前仅静音，见待处理 |
-| Trim/Crop (Ctrl+T) | ❌ | 见待处理 |
+| Ripple Delete (删除+拉移) | ✅ | Delete/Backspace 涟漪删除，BufferSizeChangeAction 完整 Undo |
+| Trim/Crop (Ctrl+T) | ✅ | Ctrl+T 裁剪，BufferSizeChangeAction 完整 Undo |
 | 时间尺/刻度标尺 | ❌ | 计划中 |
-| 音量/增益实时控制 | ❌ | 计划中 |
+| 音量/增益实时控制 | ✅ | TransportBar 增益滑块，0x–3x 实时调整 |
 | 电平表 | ❌ | 计划中 |
 | DC 偏移移除 | ❌ | 未实现 |
 | 相位翻转 | ❌ | 未实现 |
@@ -381,11 +384,11 @@
 | 拖拽导出 WAV | ✅ | Alt+选区拖动 |
 | Save As | ✅ | Ctrl+Shift+S |
 | Escape 停止 | ✅ | 停止+复位 |
-| **Ripple Delete（删除+拉移）** | ❌ | 当前仅静音，P5 高优先级 |
-| **Trim/Crop (Ctrl+T)** | ❌ | P5 高优先级 |
+| **Ripple Delete（删除+拉移）** | ✅ | Delete/Backspace 涟漪删除，BufferSizeChangeAction 完整 Undo |
+| **Trim/Crop (Ctrl+T)** | ✅ | Ctrl+T 裁剪，BufferSizeChangeAction 完整 Undo |
 | Batch/Smart tool | ❌ | 非核心功能 |
 | 时间尺/刻度标尺 | ❌ | 计划中 |
-| 音量/增益实时控制 | ❌ | 计划中 |
+| 音量/增益实时控制 | ✅ | TransportBar 增益滑块，0x–3x 实时调整 |
 | 电平表 | ❌ | 计划中 |
 | 相位翻转 | ❌ | 低优先级 |
 | DC 偏移移除 | ❌ | 低优先级 |
@@ -651,7 +654,7 @@
 | **cmdToggleView 重复绑定** | ✅ | **修复** — 移除构造函数中重复的 key mapping |
 | **RegionOverlay ChangeListener 死代码** | ✅ | **修复** — 移除未使用的 ChangeListener 继承 |
 | 时间尺/刻度标尺 | ❌ | 未实现（计划中） |
-| 音量/增益实时控制 | ❌ | 未实现（计划中） |
+| 音量/增益实时控制 | ✅ | **新增** — TransportBar 增益滑块，0x–3x 实时调整 |
 | 电平表 | ❌ | 未实现（计划中） |
 | DC 偏移移除 | ❌ | 未实现 |
 | 相位翻转 | ❌ | 未实现 |
@@ -744,8 +747,8 @@
 1. **P0 DragExport** — 骨架完成，需在 Windows 实际测试拖拽交互（当前 Linux 环境无法验证）。
 2. **P4-002: Windows 实机测试** — ⚠️ 需物理 Windows 机器。验证 DragExport、录音、Save As 等功能在 Windows 上的表现。
 3. **全文件线程安全审计** — 对 LoopManager（hasValidLoop/getLoopStart/getLoopEnd 等）进行全面 Atomic 封装，消除所有消息/音频线程数据竞争风险。当前 x86_64 上正常，跨架构（ARM）需修复。
-4. **Ripple Delete（Delete 拉移删除）** — [P5-高] Edison 的 Delete/Backspace 删除选区并拉移后续音频。Open Edison 当前仅静音。需实现 AudioModifyAction 的子类来处理缓冲区移位 + Undo。 |
-5. **Trim/Crop 选区 (Ctrl+T)** — [P5-高] Edison 可用 Ctrl+T 保留选区并删除选区外所有音频。当前缺少该功能。|
+4. **Ripple Delete（Delete 拉移删除）** — ✅ 已完成。Delete/Backspace 涟漪删除 + BufferSizeChangeAction 完整 Undo。 |
+5. **Trim/Crop 选区 (Ctrl+T)** — ✅ 已完成。Ctrl+T 裁剪 + BufferSizeChangeAction 完整 Undo。|
 6. **BPM 设置 UI** — ✅ 已完成（edison-advance），View > Set BPM... 对话框。
 7. **`m_readIndex` 溢出** — [低] JUCE `AudioBuffer` 自身使用 `int` 存储采样计数，`m_readIndex` 不会越过 `INT_MAX`。无实际溢出风险，保留 `std::atomic<int>`。
 8. **TransportBar paint/resized Y 坐标对齐** — [低] paint() 使用 getLocalBounds() 基准 vs resized() 使用 reduced(4,2)。
@@ -755,10 +758,10 @@
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
-| **Ripple Delete** | **高** | Delete 删除选区并拉移后续音频。核心 Edison 行为差异 |
-| **Trim/Crop (Ctrl+T)** | **高** | 保留选区，删除选区外所有音频 |
+| **Ripple Delete** | **高** | ✅ 已完成 — Delete/Backspace 涟漪删除，BufferSizeChangeAction 完整 Undo |
+| **Trim/Crop (Ctrl+T)** | **高** | ✅ 已完成 — Ctrl+T 裁剪，BufferSizeChangeAction 完整 Undo |
 | **时间尺/刻度标尺** | 中 | 在波形上方显示秒/节拍刻度参考线 |
-| **音量/增益实时控制** | 中 | TransportBar 添加音量滑块 |
+| **音量/增益实时控制** | 中 | ✅ 已完成 — TransportBar 增益滑块，范围 0x–3x，实时调整 |
 | **电平表** | 低 | 播放时显示实时电平 |
 | **相位翻转** | 低 | 选区/全文件相位反转 |
 | **DC 偏移移除** | 低 | 常见的音频清理功能 |

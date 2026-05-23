@@ -70,6 +70,10 @@ public:
 
     std::function<void(double)> onPositionChanged;
 
+    void setGain(float g) noexcept { m_gain.store(g); m_gainSlider.setValue(g, juce::dontSendNotification); }
+    float getGain() const noexcept { return m_gain.load(); }
+    juce::Slider& getGainSlider() noexcept { return m_gainSlider; }
+
     juce::AudioBuffer<float>* getRecordedBuffer() const noexcept { return m_recordedBuffer.get(); }
     double getRecordedSampleRate() const noexcept { return m_recordedSampleRate; }
 
@@ -95,11 +99,14 @@ private:
     int     m_recordedChannels     = 0;
     juce::CriticalSection m_recordingLock;
 
+    std::atomic<float> m_gain{1.0f};
+
     TransportIconButton m_playBtn   { "Play", TransportIconButton::Icon::Play };
     TransportIconButton m_pauseBtn  { "Pause", TransportIconButton::Icon::Pause };
     TransportIconButton m_stopBtn   { "Stop", TransportIconButton::Icon::Stop };
     TransportIconButton m_recordBtn { "Record", TransportIconButton::Icon::Record };
     juce::Slider     m_progress  { juce::Slider::LinearBar, juce::Slider::NoTextBox };
+    juce::Slider     m_gainSlider{ juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
 
     void updateButtonStates();
 
